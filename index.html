@@ -330,7 +330,7 @@
 <header>
   <div class="wrap">
     <img class="logo-img" src="assets/rhein-wordmark.png" alt="Rhein Viagens">
-    <a class="stub-btn" href="https://wa.me/5527998600269?text=Ol%C3%A1!%20Vim%20da%20Confer%C3%AAncia%20Ressurg%C3%AAncia%202026%20e%20quero%20saber%20mais%20sobre%20a%20Rhein%20Viagens%20%E2%9C%88%EF%B8%8F">
+    <a class="stub-btn" href="https://api.whatsapp.com/send?phone=5527998600269&amp;text=Ol%C3%A1!%20Vim%20da%20Confer%C3%AAncia%20Ressurg%C3%AAncia%202026%20e%20quero%20saber%20mais%20sobre%20a%20Rhein%20Viagens%20%E2%9C%88%EF%B8%8F">
       Falar no WhatsApp
     </a>
   </div>
@@ -371,7 +371,7 @@
       <div class="pass-stub">
         <div class="barcode" aria-hidden="true"></div>
         <div class="pass-ctas">
-          <a class="stub-btn" href="https://wa.me/5527998600269?text=Ol%C3%A1!%20Vim%20da%20Confer%C3%AAncia%20Ressurg%C3%AAncia%202026%20e%20quero%20saber%20mais%20sobre%20a%20Rhein%20Viagens%20%E2%9C%88%EF%B8%8F">Falar no WhatsApp</a>
+          <a class="stub-btn" href="https://api.whatsapp.com/send?phone=5527998600269&amp;text=Ol%C3%A1!%20Vim%20da%20Confer%C3%AAncia%20Ressurg%C3%AAncia%202026%20e%20quero%20saber%20mais%20sobre%20a%20Rhein%20Viagens%20%E2%9C%88%EF%B8%8F">Falar no WhatsApp</a>
           <a class="stub-btn ghost" href="https://www.instagram.com/rhein.viagens" target="_blank" rel="noopener">@rhein.viagens</a>
         </div>
       </div>
@@ -475,7 +475,7 @@
     <div class="perf"></div>
     <div class="stub-bottom">
       <div class="pass-ctas">
-        <a class="stub-btn" href="https://wa.me/5527998600269?text=Ol%C3%A1!%20Vim%20da%20Confer%C3%AAncia%20Ressurg%C3%AAncia%202026%20e%20quero%20saber%20mais%20sobre%20a%20Rhein%20Viagens%20%E2%9C%88%EF%B8%8F">Chamar no WhatsApp</a>
+        <a class="stub-btn" href="https://api.whatsapp.com/send?phone=5527998600269&amp;text=Ol%C3%A1!%20Vim%20da%20Confer%C3%AAncia%20Ressurg%C3%AAncia%202026%20e%20quero%20saber%20mais%20sobre%20a%20Rhein%20Viagens%20%E2%9C%88%EF%B8%8F">Chamar no WhatsApp</a>
         <a class="stub-btn ghost" href="https://www.instagram.com/rhein.viagens" target="_blank" rel="noopener">@rhein.viagens</a>
       </div>
       <div class="barcode" aria-hidden="true"></div>
@@ -508,6 +508,14 @@
         <div class="field">
           <label class="f-label" for="q-destino">Destino</label>
           <input id="q-destino" name="destino" type="text" required placeholder="Pra onde você quer ir?">
+        </div>
+        <div class="field">
+          <label class="f-label" for="q-ida">Data de ida</label>
+          <input id="q-ida" name="data_ida" type="date">
+        </div>
+        <div class="field">
+          <label class="f-label" for="q-volta">Data de volta</label>
+          <input id="q-volta" name="data_volta" type="date">
         </div>
         <div class="field">
           <label class="f-label" for="q-pessoas">Quantas pessoas</label>
@@ -547,7 +555,7 @@
 
       <div class="pass-stub">
         <div class="barcode" aria-hidden="true"></div>
-        <a id="quote-send" class="stub-btn" href="https://wa.me/5527998600269">Enviar pelo WhatsApp</a>
+        <a id="quote-send" class="stub-btn" href="https://api.whatsapp.com/send?phone=5527998600269">Enviar pelo WhatsApp</a>
       </div>
       <p class="form-note">Ao enviar, você é direcionado ao WhatsApp com sua cotação já preenchida — é só apertar enviar por lá.</p>
     </form>
@@ -558,7 +566,7 @@
   <div class="wrap">
     <img class="logo-img" src="assets/rhein-wordmark.png" alt="Rhein Viagens">
     <div class="contact">
-      <a href="https://wa.me/5527998600269" target="_blank" rel="noopener">(27) 99860-0269</a>
+      <a href="https://api.whatsapp.com/send?phone=5527998600269" target="_blank" rel="noopener">(27) 99860-0269</a>
       <a href="https://www.instagram.com/rhein.viagens" target="_blank" rel="noopener">@rhein.viagens</a>
     </div>
   </div>
@@ -572,10 +580,26 @@
   var bagagemQtdWrap = document.getElementById('bagagem-qtd-wrap');
   var bagagemQtdInput = document.getElementById('q-bagagem-qtd');
 
+  var idaInput = document.getElementById('q-ida');
+  var voltaInput = document.getElementById('q-volta');
+  var hojeISO = new Date().toISOString().slice(0, 10);
+  idaInput.min = hojeISO;
+  voltaInput.min = hojeISO;
+  idaInput.addEventListener('change', function () {
+    voltaInput.min = idaInput.value || hojeISO;
+    if (voltaInput.value && voltaInput.value < voltaInput.min) voltaInput.value = voltaInput.min;
+  });
+
   function syncBagagemQtd() {
     var despacha = quoteForm.querySelector('input[name="bagagem"]:checked').value === 'Sim';
     bagagemQtdWrap.hidden = !despacha;
     bagagemQtdInput.required = despacha;
+  }
+
+  function formatDateBR(iso) {
+    if (!iso) return '';
+    var partes = iso.split('-');
+    return partes[2] + '/' + partes[1] + '/' + partes[0];
   }
 
   function quoteUrl() {
@@ -585,6 +609,13 @@
     var bagagemTxt = despachaBagagem
       ? 'Sim (' + fd.get('bagagem_qtd') + ' mala' + (fd.get('bagagem_qtd') == 1 ? '' : 's') + ')'
       : 'Não';
+    var ida = formatDateBR(fd.get('data_ida'));
+    var volta = formatDateBR(fd.get('data_volta'));
+    var datasTxt;
+    if (ida && volta) datasTxt = ida + ' a ' + volta;
+    else if (ida) datasTxt = ida + ' (volta a combinar)';
+    else if (volta) datasTxt = 'volta em ' + volta + ' (ida a combinar)';
+    else datasTxt = 'a combinar';
     var linhas = [
       'Olá! Quero uma cotação de viagem:',
       '',
@@ -592,13 +623,14 @@
       'Celular: ' + fd.get('telefone'),
       'Origem: ' + fd.get('origem'),
       'Destino: ' + fd.get('destino'),
+      'Datas: ' + datasTxt,
       'Pessoas: ' + fd.get('pessoas'),
       'Bagagem despachada: ' + bagagemTxt,
       'Interesse em: ' + (interesses.length ? interesses.join(', ') : 'nada além da viagem em si')
     ];
     var obs = (fd.get('observacao') || '').trim();
     if (obs) linhas.push('Observação: ' + obs);
-    return 'https://wa.me/5527998600269?text=' + encodeURIComponent(linhas.join('\n'));
+    return 'https://api.whatsapp.com/send?phone=5527998600269&text=' + encodeURIComponent(linhas.join('\n'));
   }
 
   function refreshQuoteLink() {
