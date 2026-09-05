@@ -261,6 +261,44 @@
   .stub-cta .stub-btn.ghost:hover{background:var(--ink);color:var(--paper);}
   .stub-cta .stub-btn::before{border-color:var(--ink);}
 
+  /* ---------- quote form ---------- */
+  .quote-card{
+    margin-top:40px;
+    background:var(--paper-deep);
+    border:2px solid var(--ink);
+    max-width:720px;
+    padding:30px 32px 34px;
+  }
+  .quote-card .field{display:flex;flex-direction:column;gap:7px;}
+  .quote-card .field input{
+    font-family:'IBM Plex Mono',monospace;font-size:1rem;color:var(--ink);
+    background:transparent;border:none;border-bottom:2px solid var(--ink);
+    padding:7px 2px;width:100%;
+  }
+  .quote-card .field input::placeholder{color:var(--ink-soft);opacity:0.75;}
+  .quote-card .field input:focus{outline:none;border-bottom-color:var(--rhein-deep);}
+  .quote-card .field-group{margin-top:26px;}
+  .quote-card .field-group > .f-label{display:block;margin-bottom:12px;}
+  .radio-row,.check-grid{display:flex;flex-wrap:wrap;gap:14px 28px;}
+  .check-box{
+    display:inline-flex;align-items:center;gap:10px;cursor:pointer;
+    font-family:'IBM Plex Mono',monospace;font-size:0.92rem;
+  }
+  .check-box input{position:absolute;opacity:0;width:0;height:0;}
+  .check-box .box{
+    width:20px;height:20px;flex:0 0 auto;border:2px solid var(--ink);
+    background:var(--paper);display:flex;align-items:center;justify-content:center;
+  }
+  .check-box input[type="radio"] + .box{border-radius:50%;}
+  .check-box input[type="checkbox"]:checked + .box::after{content:'✕';font-size:0.8rem;font-weight:700;color:var(--rhein-deep);}
+  .check-box input[type="radio"]:checked + .box::after{content:'';width:9px;height:9px;border-radius:50%;background:var(--rhein-deep);}
+  .quote-card .pass-stub{margin-top:28px;}
+  .quote-card .form-note{
+    margin-top:16px;font-size:0.78rem;color:var(--ink-soft);
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .quote-card button.stub-btn{appearance:none;cursor:pointer;font:inherit;}
+
   /* ---------- footer ---------- */
   footer{padding:36px 0 40px;}
   footer .wrap{
@@ -438,6 +476,65 @@
   </div>
 </section>
 
+<section id="cotacao">
+  <div class="wrap">
+    <div class="head-block">
+      <span class="eyebrow">Peça sua cotação</span>
+      <h2 class="display">Diz pra gente pra onde você quer ir</h2>
+      <p>Preenche rápido e a gente já te chama no WhatsApp com os detalhes.</p>
+    </div>
+
+    <form class="quote-card" id="quote-form">
+      <div class="pass-fields">
+        <div class="field">
+          <label class="f-label" for="q-nome">Nome completo</label>
+          <input id="q-nome" name="nome" type="text" autocomplete="name" required placeholder="Como podemos te chamar?">
+        </div>
+        <div class="field">
+          <label class="f-label" for="q-telefone">Telefone / WhatsApp</label>
+          <input id="q-telefone" name="telefone" type="tel" autocomplete="tel" required placeholder="(00) 00000-0000">
+        </div>
+        <div class="field">
+          <label class="f-label" for="q-destino">Destino</label>
+          <input id="q-destino" name="destino" type="text" required placeholder="Pra onde você quer ir?">
+        </div>
+        <div class="field">
+          <label class="f-label" for="q-pessoas">Quantas pessoas</label>
+          <input id="q-pessoas" name="pessoas" type="number" min="1" value="1" required>
+        </div>
+      </div>
+
+      <div class="perf"></div>
+
+      <div class="field-group">
+        <span class="f-label">Bagagem despachada?</span>
+        <div class="radio-row">
+          <label class="check-box"><input type="radio" name="bagagem" value="Sim" checked><span class="box"></span>Sim</label>
+          <label class="check-box"><input type="radio" name="bagagem" value="Não"><span class="box"></span>Não</label>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <span class="f-label">Tenho interesse em</span>
+        <div class="check-grid">
+          <label class="check-box"><input type="checkbox" name="interesse" value="Seguro viagem"><span class="box"></span>Seguro viagem</label>
+          <label class="check-box"><input type="checkbox" name="interesse" value="Roteiro"><span class="box"></span>Roteiro</label>
+          <label class="check-box"><input type="checkbox" name="interesse" value="Passeios"><span class="box"></span>Passeios</label>
+          <label class="check-box"><input type="checkbox" name="interesse" value="Hospedagem"><span class="box"></span>Hospedagem</label>
+        </div>
+      </div>
+
+      <div class="perf"></div>
+
+      <div class="pass-stub">
+        <div class="barcode" aria-hidden="true"></div>
+        <button type="submit" class="stub-btn">Enviar pelo WhatsApp</button>
+      </div>
+      <p class="form-note">Ao enviar, você é direcionado ao WhatsApp com sua cotação já preenchida — é só apertar enviar por lá.</p>
+    </form>
+  </div>
+</section>
+
 <footer>
   <div class="wrap">
     <img class="logo-img" src="assets/rhein-wordmark.png" alt="Rhein Viagens">
@@ -448,6 +545,26 @@
   </div>
   <p class="fine-print">© 2026 Rhein Viagens e Turismo · CNPJ 57.930.498/0001-09 · Vila Velha/ES · Cadastur</p>
 </footer>
+
+<script>
+  document.getElementById('quote-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var fd = new FormData(this);
+    var interesses = fd.getAll('interesse');
+    var linhas = [
+      'Olá! Quero uma cotação de viagem:',
+      '',
+      'Nome: ' + fd.get('nome'),
+      'Telefone: ' + fd.get('telefone'),
+      'Destino: ' + fd.get('destino'),
+      'Pessoas: ' + fd.get('pessoas'),
+      'Bagagem despachada: ' + fd.get('bagagem'),
+      'Interesse em: ' + (interesses.length ? interesses.join(', ') : 'nada além da viagem em si')
+    ];
+    var url = 'https://wa.me/5527998600269?text=' + encodeURIComponent(linhas.join('\n'));
+    window.open(url, '_blank', 'noopener');
+  });
+</script>
 
 </body>
 </html>
