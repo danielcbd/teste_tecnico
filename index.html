@@ -330,7 +330,7 @@
 <header>
   <div class="wrap">
     <img class="logo-img" src="assets/rhein-wordmark.png" alt="Rhein Viagens">
-    <a class="stub-btn" href="https://api.whatsapp.com/send?phone=5527998600269&amp;text=Ol%C3%A1!%20Vim%20da%20Confer%C3%AAncia%20Ressurg%C3%AAncia%202026%20e%20quero%20saber%20mais%20sobre%20a%20Rhein%20Viagens%20%E2%9C%88%EF%B8%8F">
+    <a class="stub-btn wa-link" data-wa-text="Olá! Vim da Conferência Ressurgência 2026 e quero saber mais sobre a Rhein Viagens ✈️" href="https://api.whatsapp.com/send?phone=5527998600269&amp;text=Ol%C3%A1!%20Vim%20da%20Confer%C3%AAncia%20Ressurg%C3%AAncia%202026%20e%20quero%20saber%20mais%20sobre%20a%20Rhein%20Viagens%20%E2%9C%88%EF%B8%8F">
       Falar no WhatsApp
     </a>
   </div>
@@ -371,7 +371,7 @@
       <div class="pass-stub">
         <div class="barcode" aria-hidden="true"></div>
         <div class="pass-ctas">
-          <a class="stub-btn" href="https://api.whatsapp.com/send?phone=5527998600269&amp;text=Ol%C3%A1!%20Vim%20da%20Confer%C3%AAncia%20Ressurg%C3%AAncia%202026%20e%20quero%20saber%20mais%20sobre%20a%20Rhein%20Viagens%20%E2%9C%88%EF%B8%8F">Falar no WhatsApp</a>
+          <a class="stub-btn wa-link" data-wa-text="Olá! Vim da Conferência Ressurgência 2026 e quero saber mais sobre a Rhein Viagens ✈️" href="https://api.whatsapp.com/send?phone=5527998600269&amp;text=Ol%C3%A1!%20Vim%20da%20Confer%C3%AAncia%20Ressurg%C3%AAncia%202026%20e%20quero%20saber%20mais%20sobre%20a%20Rhein%20Viagens%20%E2%9C%88%EF%B8%8F">Falar no WhatsApp</a>
           <a class="stub-btn ghost" href="https://www.instagram.com/rhein.viagens" target="_blank" rel="noopener">@rhein.viagens</a>
         </div>
       </div>
@@ -475,7 +475,7 @@
     <div class="perf"></div>
     <div class="stub-bottom">
       <div class="pass-ctas">
-        <a class="stub-btn" href="https://api.whatsapp.com/send?phone=5527998600269&amp;text=Ol%C3%A1!%20Vim%20da%20Confer%C3%AAncia%20Ressurg%C3%AAncia%202026%20e%20quero%20saber%20mais%20sobre%20a%20Rhein%20Viagens%20%E2%9C%88%EF%B8%8F">Chamar no WhatsApp</a>
+        <a class="stub-btn wa-link" data-wa-text="Olá! Vim da Conferência Ressurgência 2026 e quero saber mais sobre a Rhein Viagens ✈️" href="https://api.whatsapp.com/send?phone=5527998600269&amp;text=Ol%C3%A1!%20Vim%20da%20Confer%C3%AAncia%20Ressurg%C3%AAncia%202026%20e%20quero%20saber%20mais%20sobre%20a%20Rhein%20Viagens%20%E2%9C%88%EF%B8%8F">Chamar no WhatsApp</a>
         <a class="stub-btn ghost" href="https://www.instagram.com/rhein.viagens" target="_blank" rel="noopener">@rhein.viagens</a>
       </div>
       <div class="barcode" aria-hidden="true"></div>
@@ -566,7 +566,7 @@
   <div class="wrap">
     <img class="logo-img" src="assets/rhein-wordmark.png" alt="Rhein Viagens">
     <div class="contact">
-      <a href="https://api.whatsapp.com/send?phone=5527998600269" target="_blank" rel="noopener">(27) 99860-0269</a>
+      <a class="wa-link" href="https://api.whatsapp.com/send?phone=5527998600269" rel="noopener">(27) 99860-0269</a>
       <a href="https://www.instagram.com/rhein.viagens" target="_blank" rel="noopener">@rhein.viagens</a>
     </div>
   </div>
@@ -574,6 +574,20 @@
 </footer>
 
 <script>
+  var WA_PHONE = '5527998600269';
+  var WA_IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  function waHref(text) {
+    var base = WA_IS_MOBILE ? 'whatsapp://send' : 'https://api.whatsapp.com/send';
+    return base + '?phone=' + WA_PHONE + (text ? '&text=' + encodeURIComponent(text) : '');
+  }
+
+  if (WA_IS_MOBILE) {
+    document.querySelectorAll('.wa-link').forEach(function (el) {
+      el.href = waHref(el.getAttribute('data-wa-text') || '');
+    });
+  }
+
   var quoteForm = document.getElementById('quote-form');
   var quoteSend = document.getElementById('quote-send');
 
@@ -630,7 +644,7 @@
     ];
     var obs = (fd.get('observacao') || '').trim();
     if (obs) linhas.push('Observação: ' + obs);
-    return 'https://api.whatsapp.com/send?phone=5527998600269&text=' + encodeURIComponent(linhas.join('\n'));
+    return waHref(linhas.join('\n'));
   }
 
   function refreshQuoteLink() {
