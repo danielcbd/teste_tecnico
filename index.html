@@ -297,7 +297,6 @@
     margin-top:16px;font-size:0.78rem;color:var(--ink-soft);
     font-family:'IBM Plex Mono',monospace;
   }
-  .quote-card button.stub-btn{appearance:none;cursor:pointer;font:inherit;}
 
   /* ---------- footer ---------- */
   footer{padding:36px 0 40px;}
@@ -528,7 +527,7 @@
 
       <div class="pass-stub">
         <div class="barcode" aria-hidden="true"></div>
-        <button type="submit" class="stub-btn">Enviar pelo WhatsApp</button>
+        <a id="quote-send" class="stub-btn" href="https://wa.me/5527998600269">Enviar pelo WhatsApp</a>
       </div>
       <p class="form-note">Ao enviar, você é direcionado ao WhatsApp com sua cotação já preenchida — é só apertar enviar por lá.</p>
     </form>
@@ -547,9 +546,11 @@
 </footer>
 
 <script>
-  document.getElementById('quote-form').addEventListener('submit', function (e) {
-    e.preventDefault();
-    var fd = new FormData(this);
+  var quoteForm = document.getElementById('quote-form');
+  var quoteSend = document.getElementById('quote-send');
+
+  function quoteUrl() {
+    var fd = new FormData(quoteForm);
     var interesses = fd.getAll('interesse');
     var linhas = [
       'Olá! Quero uma cotação de viagem:',
@@ -561,8 +562,23 @@
       'Bagagem despachada: ' + fd.get('bagagem'),
       'Interesse em: ' + (interesses.length ? interesses.join(', ') : 'nada além da viagem em si')
     ];
-    var url = 'https://wa.me/5527998600269?text=' + encodeURIComponent(linhas.join('\n'));
-    window.location.href = url;
+    return 'https://wa.me/5527998600269?text=' + encodeURIComponent(linhas.join('\n'));
+  }
+
+  function refreshQuoteLink() {
+    quoteSend.href = quoteUrl();
+  }
+
+  quoteForm.addEventListener('input', refreshQuoteLink);
+  quoteForm.addEventListener('change', refreshQuoteLink);
+  refreshQuoteLink();
+
+  quoteSend.addEventListener('click', function (e) {
+    refreshQuoteLink();
+    if (!quoteForm.checkValidity()) {
+      e.preventDefault();
+      quoteForm.reportValidity();
+    }
   });
 </script>
 
