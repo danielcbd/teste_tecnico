@@ -279,6 +279,14 @@
   .quote-card .field input:focus{outline:none;border-bottom-color:var(--rhein-deep);}
   .quote-card .field-group{margin-top:26px;}
   .quote-card .field-group > .f-label{display:block;margin-bottom:12px;}
+  .quote-card textarea{
+    font-family:'IBM Plex Mono',monospace;font-size:0.95rem;color:var(--ink);
+    background:var(--paper);border:2px solid var(--ink);
+    padding:10px 12px;width:100%;resize:vertical;min-height:80px;
+  }
+  .quote-card textarea::placeholder{color:var(--ink-soft);opacity:0.75;}
+  .quote-card textarea:focus{outline:none;border-color:var(--rhein-deep);}
+  #bagagem-qtd-wrap[hidden]{display:none;}
   .radio-row,.check-grid{display:flex;flex-wrap:wrap;gap:14px 28px;}
   .check-box{
     display:inline-flex;align-items:center;gap:10px;cursor:pointer;
@@ -490,8 +498,12 @@
           <input id="q-nome" name="nome" type="text" autocomplete="name" required placeholder="Como podemos te chamar?">
         </div>
         <div class="field">
-          <label class="f-label" for="q-telefone">Telefone / WhatsApp</label>
+          <label class="f-label" for="q-telefone">Celular</label>
           <input id="q-telefone" name="telefone" type="tel" autocomplete="tel" required placeholder="(00) 00000-0000">
+        </div>
+        <div class="field">
+          <label class="f-label" for="q-origem">Origem</label>
+          <input id="q-origem" name="origem" type="text" required placeholder="De onde você sai?">
         </div>
         <div class="field">
           <label class="f-label" for="q-destino">Destino</label>
@@ -511,16 +523,24 @@
           <label class="check-box"><input type="radio" name="bagagem" value="Sim" checked><span class="box"></span>Sim</label>
           <label class="check-box"><input type="radio" name="bagagem" value="Não"><span class="box"></span>Não</label>
         </div>
+        <div class="field" id="bagagem-qtd-wrap" style="margin-top:14px;max-width:180px;">
+          <label class="f-label" for="q-bagagem-qtd">Quantas malas</label>
+          <input id="q-bagagem-qtd" name="bagagem_qtd" type="number" min="1" value="1">
+        </div>
       </div>
 
       <div class="field-group">
         <span class="f-label">Tenho interesse em</span>
         <div class="check-grid">
-          <label class="check-box"><input type="checkbox" name="interesse" value="Seguro viagem"><span class="box"></span>Seguro viagem</label>
           <label class="check-box"><input type="checkbox" name="interesse" value="Roteiro"><span class="box"></span>Roteiro</label>
-          <label class="check-box"><input type="checkbox" name="interesse" value="Passeios"><span class="box"></span>Passeios</label>
           <label class="check-box"><input type="checkbox" name="interesse" value="Hospedagem"><span class="box"></span>Hospedagem</label>
+          <label class="check-box"><input type="checkbox" name="interesse" value="Seguro viagem"><span class="box"></span>Seguro viagem</label>
         </div>
+      </div>
+
+      <div class="field-group">
+        <label class="f-label" for="q-obs">Observação</label>
+        <textarea id="q-obs" name="observacao" rows="3" placeholder="Datas, preferências, o que mais a gente precisa saber..."></textarea>
       </div>
 
       <div class="perf"></div>
@@ -549,23 +569,40 @@
   var quoteForm = document.getElementById('quote-form');
   var quoteSend = document.getElementById('quote-send');
 
+  var bagagemQtdWrap = document.getElementById('bagagem-qtd-wrap');
+  var bagagemQtdInput = document.getElementById('q-bagagem-qtd');
+
+  function syncBagagemQtd() {
+    var despacha = quoteForm.querySelector('input[name="bagagem"]:checked').value === 'Sim';
+    bagagemQtdWrap.hidden = !despacha;
+    bagagemQtdInput.required = despacha;
+  }
+
   function quoteUrl() {
     var fd = new FormData(quoteForm);
     var interesses = fd.getAll('interesse');
+    var despachaBagagem = fd.get('bagagem') === 'Sim';
+    var bagagemTxt = despachaBagagem
+      ? 'Sim (' + fd.get('bagagem_qtd') + ' mala' + (fd.get('bagagem_qtd') == 1 ? '' : 's') + ')'
+      : 'Não';
     var linhas = [
       'Olá! Quero uma cotação de viagem:',
       '',
       'Nome: ' + fd.get('nome'),
-      'Telefone: ' + fd.get('telefone'),
+      'Celular: ' + fd.get('telefone'),
+      'Origem: ' + fd.get('origem'),
       'Destino: ' + fd.get('destino'),
       'Pessoas: ' + fd.get('pessoas'),
-      'Bagagem despachada: ' + fd.get('bagagem'),
+      'Bagagem despachada: ' + bagagemTxt,
       'Interesse em: ' + (interesses.length ? interesses.join(', ') : 'nada além da viagem em si')
     ];
+    var obs = (fd.get('observacao') || '').trim();
+    if (obs) linhas.push('Observação: ' + obs);
     return 'https://wa.me/5527998600269?text=' + encodeURIComponent(linhas.join('\n'));
   }
 
   function refreshQuoteLink() {
+    syncBagagemQtd();
     quoteSend.href = quoteUrl();
   }
 
