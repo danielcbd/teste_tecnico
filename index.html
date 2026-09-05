@@ -163,18 +163,21 @@
     border-bottom:1px solid var(--board-line);
     font-family:'IBM Plex Mono',monospace;
   }
-  .board-row .code{color:var(--rhein);font-weight:700;font-size:0.95rem;}
+  .board-row .code{color:var(--rhein);font-weight:700;font-size:0.95rem;white-space:nowrap;}
+  .board-row .info{display:flex;flex-direction:column;gap:5px;}
   .board-row .info .name{
+    display:block;
     font-family:'Big Shoulders Display',sans-serif;font-weight:800;
     text-transform:uppercase;font-size:1.3rem;letter-spacing:0.01em;color:var(--board-text);
   }
-  .board-row .info .desc{font-family:'IBM Plex Sans',sans-serif;color:#b8ab8c;font-size:0.9rem;margin-top:4px;}
+  .board-row .info .desc{display:block;font-family:'IBM Plex Sans',sans-serif;color:#b8ab8c;font-size:0.9rem;}
   .board-row .status{
     font-size:0.75rem;letter-spacing:0.06em;color:var(--rhein);
     border:1px solid var(--rhein);padding:5px 10px;white-space:nowrap;
   }
   @media (max-width:620px){
-    .board-row{grid-template-columns:44px 1fr;}
+    .board-row{grid-template-columns:58px 1fr;}
+    .board-row .code{font-size:0.82rem;}
     .board-row .status{grid-column:1 / -1;justify-self:start;}
   }
 
