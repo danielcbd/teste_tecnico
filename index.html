@@ -31,7 +31,7 @@
     -webkit-font-smoothing:antialiased;
     overflow-x:hidden;
   }
-  h1,h2,h3,.brand{font-family:'Baloo 2',sans-serif;}
+  h1,h2,h3{font-family:'Baloo 2',sans-serif;}
   a{color:inherit;text-decoration:none;}
   img{max-width:100%;display:block;}
   .wrap{max-width:1080px;margin:0 auto;padding:0 24px;}
@@ -47,14 +47,16 @@
     display:flex;align-items:center;justify-content:space-between;
     padding-top:14px;padding-bottom:14px;
   }
-  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.25rem;letter-spacing:0.2px;}
-  .brand .mark{
-    width:36px;height:36px;border-radius:10px;overflow:hidden;
-    background:#000;flex:0 0 auto;
-    display:flex;align-items:center;justify-content:center;
+  .logo-plate{
+    display:inline-flex;align-items:center;justify-content:center;
+    background:var(--cream);border-radius:12px;
+    flex:0 0 auto;
   }
-  .brand .mark img{width:100%;height:100%;object-fit:contain;}
-  .brand .ei{color:var(--orange);}
+  .logo-plate img{display:block;width:auto;}
+  header .logo-plate{padding:7px 14px;}
+  header .logo-plate img{height:20px;}
+  footer .logo-plate{padding:6px 12px;}
+  footer .logo-plate img{height:16px;}
   header .cta{
     background:var(--orange);color:#0b0b0d;font-weight:700;
     padding:10px 18px;border-radius:999px;font-size:0.9rem;
@@ -69,6 +71,11 @@
       radial-gradient(600px 320px at 85% -10%, rgba(255,77,35,0.25), transparent 60%),
       radial-gradient(500px 300px at 0% 110%, rgba(255,77,35,0.12), transparent 60%);
     overflow:hidden;
+  }
+  .hero .logo-plate{padding:16px 26px;margin-bottom:28px;}
+  .hero .logo-plate img{height:40px;}
+  @media (min-width:640px){
+    .hero .logo-plate img{height:52px;}
   }
   .badge{
     display:inline-flex;align-items:center;gap:8px;
@@ -231,16 +238,15 @@
 
 <header>
   <div class="wrap">
-    <div class="brand">
-      <span class="mark"><img src="assets/logo-mark.jpg" alt="Logo Rhein Viagens"></span>
-      rh<span class="ei">ei</span>n <span style="font-weight:500;color:var(--muted);font-size:0.85em;">viagens</span>
-    </div>
+    <span class="logo-plate"><img src="assets/rhein-wordmark.png" alt="Rhein Viagens"></span>
     <a class="cta" href="https://wa.me/5527998600269?text=Ol%C3%A1!%20Vim%20da%20Confer%C3%AAncia%20Ressurg%C3%AAncia%202026%20e%20quero%20saber%20mais%20sobre%20a%20Rhein%20Viagens%20%E2%9C%88%EF%B8%8F">WhatsApp</a>
   </div>
 </header>
 
 <section class="hero">
   <div class="wrap">
+    <span class="logo-plate"><img src="assets/rhein-logo.png" alt="Rhein Viagens"></span>
+    <br>
     <span class="badge"><span class="dot"></span>Você chegou aqui pela Ressurgência 2026 · CTPI · Campinas</span>
     <h1>Viva novos lugares<br><span class="accent">com quem cuida de cada detalhe.</span></h1>
     <p class="lead">A Rhein Viagens e Turismo cuida de passagens, pacotes, hospedagens, roteiros e seguro viagem — para você focar só em aproveitar. Fale com a gente agora pelo WhatsApp.</p>
@@ -391,10 +397,7 @@
 <footer>
   <div class="wrap">
     <div class="row">
-      <div class="brand" style="font-size:1rem;">
-        <span class="mark" style="width:28px;height:28px;"><img src="assets/logo-mark.jpg" alt="Logo Rhein Viagens"></span>
-        rh<span class="ei">ei</span>n viagens
-      </div>
+      <span class="logo-plate"><img src="assets/rhein-wordmark.png" alt="Rhein Viagens"></span>
       <div class="socials">
         <a href="https://wa.me/5527998600269" target="_blank" rel="noopener">(27) 99860-0269</a>
         <a href="https://www.instagram.com/rhein.viagens" target="_blank" rel="noopener">Instagram</a>
