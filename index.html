@@ -562,7 +562,7 @@
       'Interesse em: ' + (interesses.length ? interesses.join(', ') : 'nada além da viagem em si')
     ];
     var url = 'https://wa.me/5527998600269?text=' + encodeURIComponent(linhas.join('\n'));
-    window.open(url, '_blank', 'noopener');
+    window.location.href = url;
   });
 </script>
 
