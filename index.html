@@ -277,6 +277,11 @@
   }
   .quote-card .field input::placeholder{color:var(--ink-soft);opacity:0.75;}
   .quote-card .field input:focus{outline:none;border-bottom-color:var(--rhein-deep);}
+  .quote-card .field input.invalid{border-bottom-color:#c0392b;border-bottom-width:3px;}
+  .form-warning{
+    margin-top:16px;color:#c0392b;font-weight:600;font-size:0.88rem;
+    font-family:'IBM Plex Mono',monospace;
+  }
   .quote-card .field-group{margin-top:26px;}
   .quote-card .field-group > .f-label{display:block;margin-bottom:12px;}
   .quote-card textarea{
@@ -557,6 +562,7 @@
         <div class="barcode" aria-hidden="true"></div>
         <a id="quote-send" class="stub-btn" href="https://api.whatsapp.com/send?phone=5527998600269">Enviar pelo WhatsApp</a>
       </div>
+      <p class="form-warning" id="quote-warning" hidden>Preenche os campos destacados antes de enviar.</p>
       <p class="form-note">Ao enviar, você é direcionado ao WhatsApp com sua cotação já preenchida — é só apertar enviar por lá.</p>
     </form>
   </div>
@@ -648,8 +654,37 @@
   quoteForm.addEventListener('change', refreshQuoteLink);
   refreshQuoteLink();
 
-  quoteSend.addEventListener('click', function () {
+  var quoteWarning = document.getElementById('quote-warning');
+  var REQUIRED_FIELD_NAMES = ['nome', 'telefone', 'origem', 'destino', 'pessoas'];
+
+  function fieldInvalid(el) {
+    el.classList.remove('invalid');
+  }
+  quoteForm.addEventListener('input', function (e) {
+    if (e.target && e.target.classList) fieldInvalid(e.target);
+  });
+
+  function findInvalidFields() {
+    var invalid = REQUIRED_FIELD_NAMES
+      .map(function (name) { return quoteForm.elements[name]; })
+      .filter(function (el) { return !el.value.trim(); });
+    if (!bagagemQtdWrap.hidden && !bagagemQtdInput.value.trim()) invalid.push(bagagemQtdInput);
+    return invalid;
+  }
+
+  quoteSend.addEventListener('click', function (e) {
     refreshQuoteLink();
+    quoteForm.querySelectorAll('.invalid').forEach(function (el) { el.classList.remove('invalid'); });
+    var invalid = findInvalidFields();
+    if (invalid.length) {
+      e.preventDefault();
+      invalid.forEach(function (el) { el.classList.add('invalid'); });
+      quoteWarning.hidden = false;
+      invalid[0].focus();
+      invalid[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else {
+      quoteWarning.hidden = true;
+    }
   });
 </script>
 
