@@ -682,6 +682,13 @@
     var interesses = fd.getAll('interesse');
     var despachaBagagem = fd.get('bagagem') === 'Sim';
     var bagagemTexto = despachaBagagem ? 'Sim (' + fd.get('bagagem_qtd') + ' malas)' : 'Não';
+    var ida = formatDateBR(fd.get('data_ida'));
+    var volta = formatDateBR(fd.get('data_volta'));
+    var datasTexto;
+    if (ida && volta) datasTexto = ida + ' a ' + volta;
+    else if (ida) datasTexto = ida + ' (volta a combinar)';
+    else if (volta) datasTexto = 'volta em ' + volta + ' (ida a combinar)';
+    else datasTexto = 'a combinar';
 
     return fetch(IDDAS_WEBHOOK_URL, {
       method: 'POST',
@@ -691,6 +698,7 @@
         telefone: fd.get('telefone'),
         origem: fd.get('origem'),
         destino: fd.get('destino'),
+        datas: datasTexto,
         pessoas: fd.get('pessoas'),
         bagagem_texto: bagagemTexto,
         interesses: interesses.length ? interesses.join(', ') : '',
