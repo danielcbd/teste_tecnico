@@ -642,6 +642,7 @@
     ];
     var obs = (fd.get('observacao') || '').trim();
     if (obs) linhas.push('Observação: ' + obs);
+    linhas.push('', '(mensagem enviada pelo site da Rhein Viagens)');
     return waHref(linhas.join('\n'));
   }
 
