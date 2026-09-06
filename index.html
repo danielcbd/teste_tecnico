@@ -673,7 +673,66 @@
     return invalid;
   }
 
+  // ---------- iDDAS integration ----------
+  // NOTE: this key is visible to anyone who views this page's source.
+  // That's a deliberate, informed tradeoff (no backend available) -- not an oversight.
+  var IDDAS_BASE = 'https://agencia.iddas.com.br/api/v1';
+  var IDDAS_CHAVE = '00260ba9acd4acc80c6f8c9857715cb0261b32fc3e54527adf3562d04ed6a4b5';
+
+  function iddasFetch(path, token, body) {
+    var headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    return fetch(IDDAS_BASE + path, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(body)
+    }).then(function (res) {
+      if (!res.ok) throw new Error('iDDAS ' + path + ' respondeu ' + res.status);
+      return res.json();
+    });
+  }
+
+  function sendQuoteToIddas(fd) {
+    var interesses = fd.getAll('interesse');
+    var despachaBagagem = fd.get('bagagem') === 'Sim';
+    var detalhes = [
+      'De ' + fd.get('origem') + ' para ' + fd.get('destino') + '.',
+      'Bagagem despachada: ' + (despachaBagagem ? 'Sim (' + fd.get('bagagem_qtd') + ' malas)' : 'Não') + '.'
+    ].join(' ');
+    var outras = [
+      'Interesse em: ' + (interesses.length ? interesses.join(', ') : 'nada além da viagem em si') + '.',
+      (fd.get('observacao') || '').trim()
+    ].filter(Boolean).join(' ');
+    var hoje = new Date().toISOString().slice(0, 10);
+
+    return iddasFetch('/auth/login', null, { chave: IDDAS_CHAVE })
+      .then(function (login) {
+        return iddasFetch('/pessoa', login.access_token, {
+          tipo_cliente: 'S',
+          tipo_passageiro: 'S',
+          nome: fd.get('nome'),
+          celular: fd.get('telefone')
+        }).then(function (pessoa) {
+          return iddasFetch('/orcamento', login.access_token, {
+            cliente: pessoa.id,
+            canal_venda: 'Landing Page',
+            titulo: 'Viagem para ' + fd.get('destino'),
+            passageiros_adulto: Number(fd.get('pessoas')) || 1,
+            passageiros_crianca: 0,
+            passageiros_bebe: 0,
+            detalhes_viagem: detalhes,
+            outras_informacoes: outras,
+            data_orcamento: hoje
+          });
+        });
+      });
+  }
+
+  var quoteSubmitting = false;
+
   quoteSend.addEventListener('click', function (e) {
+    if (quoteSubmitting) return; // second, programmatic click: let it navigate normally
+
     refreshQuoteLink();
     quoteForm.querySelectorAll('.invalid').forEach(function (el) { el.classList.remove('invalid'); });
     var invalid = findInvalidFields();
@@ -683,9 +742,25 @@
       quoteWarning.hidden = false;
       invalid[0].focus();
       invalid[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-    } else {
-      quoteWarning.hidden = true;
+      return;
     }
+    quoteWarning.hidden = true;
+
+    e.preventDefault();
+    quoteSubmitting = true;
+    var originalLabel = quoteSend.textContent;
+    quoteSend.textContent = 'Enviando...';
+
+    var fd = new FormData(quoteForm);
+    var finish = function () {
+      quoteSend.textContent = originalLabel;
+      quoteSend.click(); // re-dispatch: falls into the guard above and navigates for real
+    };
+    var timeout = new Promise(function (resolve) { setTimeout(resolve, 6000); });
+
+    Promise.race([sendQuoteToIddas(fd), timeout])
+      .catch(function (err) { console.error('Falha ao enviar cotação pro iDDAS:', err); })
+      .then(finish);
   });
 </script>
 
