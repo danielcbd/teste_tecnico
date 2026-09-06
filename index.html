@@ -575,17 +575,9 @@
 
 <script>
   var WA_PHONE = '5527998600269';
-  var WA_IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
   function waHref(text) {
-    var base = WA_IS_MOBILE ? 'whatsapp://send' : 'https://api.whatsapp.com/send';
-    return base + '?phone=' + WA_PHONE + (text ? '&text=' + encodeURIComponent(text) : '');
-  }
-
-  if (WA_IS_MOBILE) {
-    document.querySelectorAll('.wa-link').forEach(function (el) {
-      el.href = waHref(el.getAttribute('data-wa-text') || '');
-    });
+    return 'https://api.whatsapp.com/send?phone=' + WA_PHONE + (text ? '&text=' + encodeURIComponent(text) : '');
   }
 
   var quoteForm = document.getElementById('quote-form');
