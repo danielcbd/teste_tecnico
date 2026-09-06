@@ -648,12 +648,8 @@
   quoteForm.addEventListener('change', refreshQuoteLink);
   refreshQuoteLink();
 
-  quoteSend.addEventListener('click', function (e) {
+  quoteSend.addEventListener('click', function () {
     refreshQuoteLink();
-    if (!quoteForm.checkValidity()) {
-      e.preventDefault();
-      quoteForm.reportValidity();
-    }
   });
 </script>
 
