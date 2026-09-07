@@ -1,0 +1,547 @@
+{
+  "name": "Atendimento e Qualificação de Leads - Agência de Viagens",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-message",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-lead-message",
+      "name": "Mensagem Recebida (Lead)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1600,
+        0
+      ],
+      "webhookId": "lead-message"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Estado compartilhado do workflow (persiste entre execuções)\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.sessions) staticData.sessions = {};\n\nconst body = $json.body || {};\nconst sessionId = String(body.sessionId || body.from || body.telefone || 'sem-sessao');\nconst messageText = String(body.message || body.text || body.mensagem || '').trim();\n\nif (!staticData.sessions[sessionId]) {\n  staticData.sessions[sessionId] = {\n    active: true,   // false = atendente humano assumiu a conversa\n    waiting: false,  // true = já existe uma execução aguardando a janela de 1min\n    messages: [],\n  };\n}\n\nconst session = staticData.sessions[sessionId];\n\n// Se um humano já assumiu essa conversa, o agente não deve responder\nif (session.active === false) {\n  return [{ json: { sessionId, shouldProcess: false, reason: 'agente_desativado_por_atendente_humano' } }];\n}\n\nif (messageText) {\n  session.messages.push({ text: messageText, timestamp: new Date().toISOString() });\n}\n\n// A primeira mensagem da janela abre a espera de 1min.\n// Mensagens seguintes dentro da mesma janela só se acumulam como contexto.\nconst startWait = !session.waiting;\nif (startWait) {\n  session.waiting = true;\n}\n\nreturn [{\n  json: {\n    sessionId,\n    shouldProcess: true,\n    startWait,\n  }\n}];"
+      },
+      "id": "code-registrar-mensagem",
+      "name": "Registrar Mensagem e Verificar Estado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1360,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-agente-ativo",
+              "leftValue": "={{ $json.shouldProcess }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-agente-ativo",
+      "name": "Agente Ativo para esta Sessão?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1120,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "noop-agente-desativado",
+      "name": "Fim - Atendente Humano Está Cuidando",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -880,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-start-wait",
+              "leftValue": "={{ $json.startWait }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-iniciar-espera",
+      "name": "É a 1ª Mensagem da Janela?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        -80
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "noop-mensagem-acumulada",
+      "name": "Fim - Mensagem Vira Contexto",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -640,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "unit": "seconds",
+        "amount": 60
+      },
+      "id": "wait-60s",
+      "name": "Aguardar 1min (janela de contexto)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -640,
+        -160
+      ],
+      "webhookId": "wait-lead-message"
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst sessionId = $json.sessionId;\nconst session = staticData.sessions[sessionId];\n\n// Se o atendente humano assumiu durante a espera, aborta o envio automático\nif (!session || session.active === false) {\n  return [{ json: { sessionId, shouldProcess: false, reason: 'assumido_por_humano_durante_espera' } }];\n}\n\nconst context = session.messages.map(m => m.text).filter(Boolean).join('\\n');\nconst messageCount = session.messages.length;\n\n// Limpa a fila e libera a sessão para a próxima janela de 1min\nsession.messages = [];\nsession.waiting = false;\n\nreturn [{\n  json: {\n    sessionId,\n    shouldProcess: true,\n    context,\n    messageCount,\n  }\n}];"
+      },
+      "id": "code-coletar-mensagens",
+      "name": "Coletar Mensagens da Janela",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-ainda-ativo",
+              "leftValue": "={{ $json.shouldProcess }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-ainda-ativo-pos-espera",
+      "name": "Continua Ativo Após a Espera?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        -160
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "noop-assumido-durante-espera",
+      "name": "Fim - Humano Assumiu Durante Espera",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        80,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Histórico de mensagens do lead nesta janela de atendimento (podem ter sido enviadas em pedaços, trate como um único contexto):\n\n{{ $json.context }}",
+        "options": {
+          "systemMessage": "Você é o assistente virtual responsável pelo PRIMEIRO atendimento de leads de uma agência de viagens (WhatsApp/chat).\n\nObjetivo:\n1. Dar boas-vindas de forma natural e consultiva, tratando todas as mensagens recebidas na janela como um único contexto (o lead pode ter mandado a mensagem picada em várias partes).\n2. Conduzir a conversa para entender: destino desejado, período/data pretendida, quantidade de pessoas, orçamento aproximado e nível de urgência.\n3. Nunca inventar informações que o lead não forneceu; se faltar dado importante, pergunte.\n4. Ao final, classificar o lead em uma das três categorias, segundo os critérios:\n   - quente: já tem data definida ou próxima, orçamento mencionado ou compatível, urgência clara, ou pede para fechar/agendar.\n   - morno: demonstrou interesse real e passou ao menos uma informação relevante (destino ou período), mas sem urgência ou dados completos.\n   - frio: mensagem vaga, apenas curiosidade, sem intenção clara de viajar, ou ignorou as perguntas de qualificação.\n\nResponda sempre em português do Brasil, em tom cordial e profissional."
+        }
+      },
+      "id": "agent-qualificar-lead",
+      "name": "Qualificar Lead e Responder",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        160,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "options": {
+          "temperature": 0.4
+        }
+      },
+      "id": "lm-openai",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        60,
+        -80
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.sessionId }}",
+        "contextWindowLength": 12
+      },
+      "id": "memory-buffer",
+      "name": "Memória da Conversa (por Lead)",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        160,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"resposta\": {\n      \"type\": \"string\",\n      \"description\": \"Mensagem a ser enviada de volta ao lead\"\n    },\n    \"classificacao\": {\n      \"type\": \"string\",\n      \"enum\": [\"frio\", \"morno\", \"quente\"],\n      \"description\": \"Classificação de temperatura do lead\"\n    },\n    \"resumo_qualificacao\": {\n      \"type\": \"string\",\n      \"description\": \"Resumo curto do que foi entendido sobre o lead (destino, período, orçamento, urgência)\"\n    }\n  },\n  \"required\": [\"resposta\", \"classificacao\"]\n}"
+      },
+      "id": "output-parser",
+      "name": "Formato de Saída (resposta + classificação)",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        280,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://SUA_API_DE_MENSAGERIA/enviar-mensagem",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"to\": $json.sessionId, \"message\": $json.output.resposta } }}",
+        "options": {}
+      },
+      "id": "http-enviar-resposta",
+      "name": "Enviar Resposta ao Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        420,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "SUA_PLANILHA_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sessionId": "={{ $('Coletar Mensagens da Janela').item.json.sessionId }}",
+            "classificacao": "={{ $json.output.classificacao }}",
+            "resumo": "={{ $json.output.resumo_qualificacao }}",
+            "data": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "sheets-registrar-classificacao",
+      "name": "Registrar Classificação do Lead",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        680,
+        -320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agent-message",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-agent-message",
+      "name": "Mensagem Enviada Manualmente (Atendente)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1600,
+        320
+      ],
+      "webhookId": "agent-message"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Disparado quando o atendente humano responde manualmente pelo canal oficial\n// (ex.: evento 'fromMe' do WhatsApp / mensagem enviada pelo operador no CRM).\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.sessions) staticData.sessions = {};\n\nconst body = $json.body || {};\nconst sessionId = String(body.sessionId || body.to || body.telefone || 'sem-sessao');\n\nif (!staticData.sessions[sessionId]) {\n  staticData.sessions[sessionId] = { active: true, waiting: false, messages: [] };\n}\n\n// Desativa o agente para esta conversa e descarta mensagens do lead ainda não respondidas\nstaticData.sessions[sessionId].active = false;\nstaticData.sessions[sessionId].messages = [];\nstaticData.sessions[sessionId].waiting = false;\n\nreturn [{ json: { sessionId, active: false } }];"
+      },
+      "id": "code-desativar-agente",
+      "name": "Desativar Agente para a Sessão",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1360,
+        320
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "noop-handoff-registrado",
+      "name": "Fim - Handoff Humano Registrado",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -1120,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Mensagem Recebida (Lead)": {
+      "main": [
+        [
+          {
+            "node": "Registrar Mensagem e Verificar Estado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar Mensagem e Verificar Estado": {
+      "main": [
+        [
+          {
+            "node": "Agente Ativo para esta Sessão?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Ativo para esta Sessão?": {
+      "main": [
+        [
+          {
+            "node": "É a 1ª Mensagem da Janela?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fim - Atendente Humano Está Cuidando",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É a 1ª Mensagem da Janela?": {
+      "main": [
+        [
+          {
+            "node": "Aguardar 1min (janela de contexto)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fim - Mensagem Vira Contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar 1min (janela de contexto)": {
+      "main": [
+        [
+          {
+            "node": "Coletar Mensagens da Janela",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Coletar Mensagens da Janela": {
+      "main": [
+        [
+          {
+            "node": "Continua Ativo Após a Espera?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continua Ativo Após a Espera?": {
+      "main": [
+        [
+          {
+            "node": "Qualificar Lead e Responder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fim - Humano Assumiu Durante Espera",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qualificar Lead e Responder": {
+      "main": [
+        [
+          {
+            "node": "Enviar Resposta ao Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Qualificar Lead e Responder",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memória da Conversa (por Lead)": {
+      "ai_memory": [
+        [
+          {
+            "node": "Qualificar Lead e Responder",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formato de Saída (resposta + classificação)": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Qualificar Lead e Responder",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Resposta ao Lead": {
+      "main": [
+        [
+          {
+            "node": "Registrar Classificação do Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensagem Enviada Manualmente (Atendente)": {
+      "main": [
+        [
+          {
+            "node": "Desativar Agente para a Sessão",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Desativar Agente para a Sessão": {
+      "main": [
+        [
+          {
+            "node": "Fim - Handoff Humano Registrado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
