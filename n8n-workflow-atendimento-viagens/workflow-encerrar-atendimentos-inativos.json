@@ -1,0 +1,63 @@
+{
+  "name": "Encerrar Atendimentos Inativos (manutenção diária)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 3 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-diario",
+      "name": "Todo dia às 03h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE atendimentos\nSET status = 'encerrado'\nWHERE status = 'aberto'\n  AND last_message_at < now() - interval '48 hours';",
+        "options": {}
+      },
+      "id": "pg-encerrar-atendimentos",
+      "name": "Marcar Atendimentos Inativos como Encerrados",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -160,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Todo dia às 03h": {
+      "main": [
+        [
+          {
+            "node": "Marcar Atendimentos Inativos como Encerrados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

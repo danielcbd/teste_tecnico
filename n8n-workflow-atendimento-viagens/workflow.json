@@ -1,33 +1,33 @@
 {
-  "name": "Atendimento e Qualificação de Leads - Agência de Viagens",
+  "name": "Atendimento e Qualificação de Leads - Agência de Viagens (UAZAPI + Supabase)",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "lead-message",
+        "path": "uazapi-webhook",
         "responseMode": "onReceived",
         "options": {}
       },
-      "id": "webhook-lead-message",
-      "name": "Mensagem Recebida (Lead)",
+      "id": "webhook-uazapi",
+      "name": "Webhook UAZAPI (todas as mensagens)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -1600,
+        -2200,
         0
       ],
-      "webhookId": "lead-message"
+      "webhookId": "uazapi-webhook"
     },
     {
       "parameters": {
-        "jsCode": "// Estado compartilhado do workflow (persiste entre execuções)\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.sessions) staticData.sessions = {};\n\nconst body = $json.body || {};\nconst sessionId = String(body.sessionId || body.from || body.telefone || 'sem-sessao');\nconst messageText = String(body.message || body.text || body.mensagem || '').trim();\n\nif (!staticData.sessions[sessionId]) {\n  staticData.sessions[sessionId] = {\n    active: true,   // false = atendente humano assumiu a conversa\n    waiting: false,  // true = já existe uma execução aguardando a janela de 1min\n    messages: [],\n  };\n}\n\nconst session = staticData.sessions[sessionId];\n\n// Se um humano já assumiu essa conversa, o agente não deve responder\nif (session.active === false) {\n  return [{ json: { sessionId, shouldProcess: false, reason: 'agente_desativado_por_atendente_humano' } }];\n}\n\nif (messageText) {\n  session.messages.push({ text: messageText, timestamp: new Date().toISOString() });\n}\n\n// A primeira mensagem da janela abre a espera de 1min.\n// Mensagens seguintes dentro da mesma janela só se acumulam como contexto.\nconst startWait = !session.waiting;\nif (startWait) {\n  session.waiting = true;\n}\n\nreturn [{\n  json: {\n    sessionId,\n    shouldProcess: true,\n    startWait,\n  }\n}];"
+        "jsCode": "// AJUSTAR CONFORME O PAYLOAD REAL DA UAZAPI (não foi possível confirmar os nomes exatos\n// de campo neste ambiente - o acesso à documentação da UAZAPI está bloqueado aqui).\n// Modelo assumido, comum em APIs baseadas em Baileys (mesma família da Evolution API):\n// {\n//   \"event\": \"messages.upsert\",\n//   \"instance\": \"minha-instancia\",\n//   \"data\": {\n//     \"key\": { \"remoteJid\": \"5511999999999@s.whatsapp.net\", \"fromMe\": false, \"id\": \"ABC123\" },\n//     \"pushName\": \"João Silva\",\n//     \"message\": { \"conversation\": \"Oi, tudo bem?\" }\n//   }\n// }\nconst body = $json.body || {};\nconst data = body.data || body;\nconst key = data.key || {};\n\nconst remoteJid = key.remoteJid || data.chatid || data.phone || '';\nconst phone = String(remoteJid).replace('@s.whatsapp.net', '').replace('@g.us', '');\n\nconst text =\n  data?.message?.conversation ||\n  data?.message?.extendedTextMessage?.text ||\n  data?.text ||\n  data?.body ||\n  '';\n\nconst fromMe = Boolean(key.fromMe ?? data.fromMe ?? false);\nconst externalId = key.id || data.id || null;\nconst pushName = data.pushName || data.senderName || null;\n\nreturn [{\n  json: {\n    phone,\n    text: String(text).trim(),\n    fromMe,\n    externalId,\n    pushName,\n  }\n}];"
       },
-      "id": "code-registrar-mensagem",
-      "name": "Registrar Mensagem e Verificar Estado",
+      "id": "code-normalizar-payload",
+      "name": "Normalizar Payload UAZAPI",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -1360,
+        -1960,
         0
       ]
     },
@@ -41,8 +41,165 @@
           },
           "conditions": [
             {
+              "id": "cond-from-me",
+              "leftValue": "={{ $json.fromMe }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-from-me",
+      "name": "Mensagem Enviada pelo Meu Número?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT 1 FROM mensagens WHERE external_id = $1 AND remetente = 'agente' LIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ [$json.externalId] }}"
+        }
+      },
+      "id": "pg-verificar-eco",
+      "name": "Verificar se é Eco do Próprio Bot",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1480,
+        180
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-eco",
+              "leftValue": "={{ $json.isEmpty() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-eh-eco",
+      "name": "Não Encontrou = Foi Humano (não é eco)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1240,
+        180
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "noop-eco-bot",
+      "name": "Fim - Eco da Própria Resposta do Bot",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -1000,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE leads SET agent_active = false, updated_at = now() WHERE phone = $1 RETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$('Normalizar Payload UAZAPI').item.json.phone] }}"
+        }
+      },
+      "id": "pg-desativar-agente",
+      "name": "Desativar Agente (Handoff Humano)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1000,
+        60
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "noop-handoff-registrado",
+      "name": "Fim - Handoff Registrado",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -760,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO leads (phone, name)\nVALUES ($1, $2)\nON CONFLICT (phone) DO UPDATE SET updated_at = now()\nRETURNING id, agent_active;",
+        "options": {
+          "queryReplacement": "={{ [$json.phone, $json.pushName] }}"
+        }
+      },
+      "id": "pg-upsert-lead",
+      "name": "Upsert Lead",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1480,
+        -180
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
               "id": "cond-agente-ativo",
-              "leftValue": "={{ $json.shouldProcess }}",
+              "leftValue": "={{ $json.agent_active }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -60,8 +217,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        -1120,
-        0
+        -1240,
+        -180
       ]
     },
     {
@@ -71,9 +228,32 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        -880,
-        180
+        -1000,
+        -360
       ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH antes AS (\n  SELECT waiting FROM leads WHERE id = $1 FOR UPDATE\n)\nUPDATE leads\nSET fila_pendente = fila_pendente || jsonb_build_array(jsonb_build_object('texto', $2::text, 'timestamp', now())),\n    waiting = true,\n    updated_at = now()\nWHERE id = $1\nRETURNING (SELECT waiting FROM antes) AS estava_esperando;",
+        "options": {
+          "queryReplacement": "={{ [$('Upsert Lead').item.json.id, $('Normalizar Payload UAZAPI').item.json.text] }}"
+        }
+      },
+      "id": "pg-enfileirar-mensagem",
+      "name": "Enfileirar Mensagem (Lock Atômico)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1000,
+        -180
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
+        }
+      }
     },
     {
       "parameters": {
@@ -85,12 +265,12 @@
           },
           "conditions": [
             {
-              "id": "cond-start-wait",
-              "leftValue": "={{ $json.startWait }}",
-              "rightValue": true,
+              "id": "cond-iniciar-espera",
+              "leftValue": "={{ $json.estava_esperando }}",
+              "rightValue": false,
               "operator": {
                 "type": "boolean",
-                "operation": "true",
+                "operation": "false",
                 "singleValue": true
               }
             }
@@ -104,8 +284,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        -880,
-        -80
+        -760,
+        -180
       ]
     },
     {
@@ -115,8 +295,8 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        -640,
-        80
+        -520,
+        0
       ]
     },
     {
@@ -130,23 +310,33 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        -640,
-        -160
+        -520,
+        -360
       ],
       "webhookId": "wait-lead-message"
     },
     {
       "parameters": {
-        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst sessionId = $json.sessionId;\nconst session = staticData.sessions[sessionId];\n\n// Se o atendente humano assumiu durante a espera, aborta o envio automático\nif (!session || session.active === false) {\n  return [{ json: { sessionId, shouldProcess: false, reason: 'assumido_por_humano_durante_espera' } }];\n}\n\nconst context = session.messages.map(m => m.text).filter(Boolean).join('\\n');\nconst messageCount = session.messages.length;\n\n// Limpa a fila e libera a sessão para a próxima janela de 1min\nsession.messages = [];\nsession.waiting = false;\n\nreturn [{\n  json: {\n    sessionId,\n    shouldProcess: true,\n    context,\n    messageCount,\n  }\n}];"
+        "operation": "executeQuery",
+        "query": "WITH antes AS (\n  SELECT fila_pendente, agent_active FROM leads WHERE id = $1 FOR UPDATE\n)\nUPDATE leads\nSET fila_pendente = '[]'::jsonb,\n    waiting = false,\n    updated_at = now()\nWHERE id = $1\nRETURNING (SELECT fila_pendente FROM antes) AS mensagens_coletadas,\n          (SELECT agent_active FROM antes) AS agent_active;",
+        "options": {
+          "queryReplacement": "={{ [$('Upsert Lead').item.json.id] }}"
+        }
       },
-      "id": "code-coletar-mensagens",
-      "name": "Coletar Mensagens da Janela",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "id": "pg-coletar-fila",
+      "name": "Coletar Fila e Limpar",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
       "position": [
-        -400,
-        -160
-      ]
+        -280,
+        -360
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
+        }
+      }
     },
     {
       "parameters": {
@@ -159,7 +349,7 @@
           "conditions": [
             {
               "id": "cond-ainda-ativo",
-              "leftValue": "={{ $json.shouldProcess }}",
+              "leftValue": "={{ $json.agent_active }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -177,8 +367,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        -160,
-        -160
+        -40,
+        -360
       ]
     },
     {
@@ -188,16 +378,65 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        80,
-        60
+        200,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const coletado = $json.mensagens_coletadas || [];\nconst mensagemConsolidada = coletado.map(m => m.texto).filter(Boolean).join('\\n');\n\nreturn [{\n  json: {\n    mensagemConsolidada,\n    quantidadeMensagens: coletado.length,\n  }\n}];"
+      },
+      "id": "code-montar-texto",
+      "name": "Montar Texto Consolidado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        -540
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, topico, resumo, classificacao, last_message_at\nFROM atendimentos\nWHERE lead_id = $1\nORDER BY last_message_at DESC\nLIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ [$('Upsert Lead').item.json.id] }}"
+        }
+      },
+      "id": "pg-buscar-atendimento",
+      "name": "Buscar Último Atendimento",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        440,
+        -540
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Decide se, à primeira vista, é plausível ser um assunto novo.\n// Regra: se o lead falou há pouco tempo (ex.: dentro de 6h), é claramente\n// a mesma conversa - não vale a pena nem perguntar à IA. Só quando o\n// intervalo é grande (ex.: aqueles \"7 dias depois\" do exemplo) é que\n// pedimos para a IA avaliar se é continuação ou assunto novo.\nconst LIMITE_HORAS_MESMO_ASSUNTO = 6;\n\nconst rows = $input.all();\nconst atendimentoAnterior = rows.length > 0 ? rows[0].json : null;\n\nlet gapHoras = null;\nlet possivelNovoAssunto = true;\n\nif (atendimentoAnterior) {\n  const last = new Date(atendimentoAnterior.last_message_at);\n  gapHoras = (Date.now() - last.getTime()) / (1000 * 60 * 60);\n  possivelNovoAssunto = gapHoras > LIMITE_HORAS_MESMO_ASSUNTO;\n}\n\nreturn [{\n  json: {\n    mensagemConsolidada: $('Montar Texto Consolidado').item.json.mensagemConsolidada,\n    temAtendimentoAnterior: !!atendimentoAnterior,\n    atendimentoAnteriorId: atendimentoAnterior ? atendimentoAnterior.id : null,\n    topicoAnterior: atendimentoAnterior ? atendimentoAnterior.topico : null,\n    resumoAnterior: atendimentoAnterior ? atendimentoAnterior.resumo : null,\n    classificacaoAnterior: atendimentoAnterior ? atendimentoAnterior.classificacao : null,\n    gapHoras,\n    possivelNovoAssunto,\n  }\n}];"
+      },
+      "id": "code-preparar-contexto",
+      "name": "Preparar Contexto e Calcular Gap",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        -540
       ]
     },
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Histórico de mensagens do lead nesta janela de atendimento (podem ter sido enviadas em pedaços, trate como um único contexto):\n\n{{ $json.context }}",
+        "text": "=Mensagens novas do lead nesta janela de atendimento (podem ter sido enviadas em pedaços, trate como um único contexto):\n\n{{ $json.mensagemConsolidada }}\n\n---\n{{ $json.temAtendimentoAnterior ? ('Você já atendeu este lead antes.\\nResumo do atendimento anterior: ' + $json.resumoAnterior + '\\nClassificação anterior: ' + $json.classificacaoAnterior + '\\nTempo desde a última mensagem: ' + Math.round($json.gapHoras) + ' horas.') : 'Este é o primeiro contato deste lead - não existe histórico anterior.' }}\n{{ $json.possivelNovoAssunto ? 'Como faz tempo desde o último contato, avalie com atenção se a mensagem nova continua o MESMO assunto do resumo acima ou se é um ASSUNTO NOVO, e preencha o campo mesmo_assunto de acordo.' : '' }}",
         "options": {
-          "systemMessage": "Você é o assistente virtual responsável pelo PRIMEIRO atendimento de leads de uma agência de viagens (WhatsApp/chat).\n\nObjetivo:\n1. Dar boas-vindas de forma natural e consultiva, tratando todas as mensagens recebidas na janela como um único contexto (o lead pode ter mandado a mensagem picada em várias partes).\n2. Conduzir a conversa para entender: destino desejado, período/data pretendida, quantidade de pessoas, orçamento aproximado e nível de urgência.\n3. Nunca inventar informações que o lead não forneceu; se faltar dado importante, pergunte.\n4. Ao final, classificar o lead em uma das três categorias, segundo os critérios:\n   - quente: já tem data definida ou próxima, orçamento mencionado ou compatível, urgência clara, ou pede para fechar/agendar.\n   - morno: demonstrou interesse real e passou ao menos uma informação relevante (destino ou período), mas sem urgência ou dados completos.\n   - frio: mensagem vaga, apenas curiosidade, sem intenção clara de viajar, ou ignorou as perguntas de qualificação.\n\nResponda sempre em português do Brasil, em tom cordial e profissional."
+          "systemMessage": "Você é o assistente virtual de atendimento de uma agência de viagens (WhatsApp).\n\nObjetivo:\n1. Se houver histórico anterior e for o MESMO assunto, cumprimente o lead reconhecendo a conversa anterior (como um atendente humano que lembra do cliente), sem repetir perguntas já respondidas antes.\n2. Se não houver histórico, ou se for um ASSUNTO NOVO, conduza como um primeiro atendimento: boas-vindas + perguntas de qualificação.\n3. Conduza a conversa para entender: destino desejado, período/data pretendida, número de pessoas, orçamento aproximado e urgência.\n4. Nunca invente informações que o lead não forneceu.\n5. Classifique o lead em uma das categorias:\n   - quente: data definida/próxima, orçamento mencionado, urgência clara, ou pede para fechar/agendar.\n   - morno: interesse real com alguma informação relevante, mas sem urgência ou dados completos.\n   - frio: mensagem vaga, curiosidade, sem intenção clara, ou ignora as perguntas de qualificação.\n6. Gere um resumo atualizado do atendimento (curto, objetivo, útil para você mesmo se lembrar depois) e um tópico curto (ex.: \"Pacote Cancún - casal - julho\").\n7. Preencha mesmo_assunto = true apenas quando a nova mensagem for claramente uma continuação do resumo anterior fornecido; caso contrário false. Se não havia atendimento anterior, preencha mesmo_assunto = false.\n\nResponda sempre em português do Brasil, em tom cordial e profissional."
         }
       },
       "id": "agent-qualificar-lead",
@@ -205,8 +444,8 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
       "position": [
-        160,
-        -320
+        920,
+        -700
       ]
     },
     {
@@ -225,8 +464,8 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1,
       "position": [
-        60,
-        -80
+        820,
+        -460
       ],
       "credentials": {
         "openAiApi": {
@@ -237,145 +476,283 @@
     },
     {
       "parameters": {
-        "sessionIdType": "customKey",
-        "sessionKey": "={{ $json.sessionId }}",
-        "contextWindowLength": 12
-      },
-      "id": "memory-buffer",
-      "name": "Memória da Conversa (por Lead)",
-      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
-      "typeVersion": 1.3,
-      "position": [
-        160,
-        -80
-      ]
-    },
-    {
-      "parameters": {
         "schemaType": "manual",
-        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"resposta\": {\n      \"type\": \"string\",\n      \"description\": \"Mensagem a ser enviada de volta ao lead\"\n    },\n    \"classificacao\": {\n      \"type\": \"string\",\n      \"enum\": [\"frio\", \"morno\", \"quente\"],\n      \"description\": \"Classificação de temperatura do lead\"\n    },\n    \"resumo_qualificacao\": {\n      \"type\": \"string\",\n      \"description\": \"Resumo curto do que foi entendido sobre o lead (destino, período, orçamento, urgência)\"\n    }\n  },\n  \"required\": [\"resposta\", \"classificacao\"]\n}"
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"resposta\": { \"type\": \"string\", \"description\": \"Mensagem a ser enviada de volta ao lead\" },\n    \"classificacao\": { \"type\": \"string\", \"enum\": [\"frio\", \"morno\", \"quente\"] },\n    \"topico\": { \"type\": \"string\", \"description\": \"Rótulo curto do assunto deste atendimento\" },\n    \"resumo_atendimento\": { \"type\": \"string\", \"description\": \"Resumo atualizado e cumulativo do atendimento\" },\n    \"mesmo_assunto\": { \"type\": \"boolean\", \"description\": \"true se continua o atendimento anterior, false se é assunto novo\" }\n  },\n  \"required\": [\"resposta\", \"classificacao\", \"topico\", \"resumo_atendimento\", \"mesmo_assunto\"]\n}"
       },
       "id": "output-parser",
-      "name": "Formato de Saída (resposta + classificação)",
+      "name": "Formato de Saída",
       "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
       "typeVersion": 1.2,
       "position": [
-        280,
-        -80
+        1040,
+        -460
       ]
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://SUA_API_DE_MENSAGERIA/enviar-mensagem",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ { \"to\": $json.sessionId, \"message\": $json.output.resposta } }}",
-        "options": {}
+        "jsCode": "const ctx = $('Preparar Contexto e Calcular Gap').item.json;\nconst saida = $json.output;\n\nlet reutilizarAtendimento = false;\nif (ctx.temAtendimentoAnterior) {\n  reutilizarAtendimento = ctx.possivelNovoAssunto ? saida.mesmo_assunto === true : true;\n}\n\nreturn [{\n  json: {\n    ...ctx,\n    ...saida,\n    reutilizarAtendimento,\n  }\n}];"
       },
-      "id": "http-enviar-resposta",
-      "name": "Enviar Resposta ao Lead",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "id": "code-decidir-atendimento",
+      "name": "Decidir Atendimento (novo ou continuar)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
-        420,
-        -320
+        1180,
+        -700
       ]
     },
     {
       "parameters": {
-        "operation": "append",
-        "documentId": {
-          "__rl": true,
-          "value": "SUA_PLANILHA_ID",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Leads",
-          "mode": "list"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "sessionId": "={{ $('Coletar Mensagens da Janela').item.json.sessionId }}",
-            "classificacao": "={{ $json.output.classificacao }}",
-            "resumo": "={{ $json.output.resumo_qualificacao }}",
-            "data": "={{ $now.toISO() }}"
-          }
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-reutilizar",
+              "leftValue": "={{ $json.reutilizarAtendimento }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
         },
         "options": {}
       },
-      "id": "sheets-registrar-classificacao",
-      "name": "Registrar Classificação do Lead",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
+      "id": "if-atendimento-existente",
+      "name": "Atendimento Existente?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
       "position": [
-        680,
-        -320
+        1420,
+        -700
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE atendimentos\nSET status = 'aberto',\n    topico = $2,\n    resumo = $3,\n    classificacao = $4,\n    last_message_at = now()\nWHERE id = $1\nRETURNING id AS atendimento_id;",
+        "options": {
+          "queryReplacement": "={{ [$json.atendimentoAnteriorId, $json.topico, $json.resumo_atendimento, $json.classificacao] }}"
+        }
+      },
+      "id": "pg-atualizar-atendimento",
+      "name": "Atualizar Atendimento Existente",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1660,
+        -820
       ],
       "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "GOOGLE_SHEETS_CREDENTIAL_ID",
-          "name": "Google Sheets account"
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
         }
       }
     },
     {
       "parameters": {
-        "httpMethod": "POST",
-        "path": "agent-message",
-        "responseMode": "onReceived",
-        "options": {}
+        "operation": "executeQuery",
+        "query": "INSERT INTO atendimentos (lead_id, status, topico, resumo, classificacao, last_message_at)\nVALUES ($1, 'aberto', $2, $3, $4, now())\nRETURNING id AS atendimento_id;",
+        "options": {
+          "queryReplacement": "={{ [$('Upsert Lead').item.json.id, $json.topico, $json.resumo_atendimento, $json.classificacao] }}"
+        }
       },
-      "id": "webhook-agent-message",
-      "name": "Mensagem Enviada Manualmente (Atendente)",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
+      "id": "pg-criar-atendimento",
+      "name": "Criar Novo Atendimento",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
       "position": [
-        -1600,
-        320
+        1660,
+        -600
       ],
-      "webhookId": "agent-message"
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
+        }
+      }
     },
     {
       "parameters": {
-        "jsCode": "// Disparado quando o atendente humano responde manualmente pelo canal oficial\n// (ex.: evento 'fromMe' do WhatsApp / mensagem enviada pelo operador no CRM).\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.sessions) staticData.sessions = {};\n\nconst body = $json.body || {};\nconst sessionId = String(body.sessionId || body.to || body.telefone || 'sem-sessao');\n\nif (!staticData.sessions[sessionId]) {\n  staticData.sessions[sessionId] = { active: true, waiting: false, messages: [] };\n}\n\n// Desativa o agente para esta conversa e descarta mensagens do lead ainda não respondidas\nstaticData.sessions[sessionId].active = false;\nstaticData.sessions[sessionId].messages = [];\nstaticData.sessions[sessionId].waiting = false;\n\nreturn [{ json: { sessionId, active: false } }];"
+        "method": "POST",
+        "url": "https://SUA_INSTANCIA.uazapi.com/send/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "SEU_TOKEN_UAZAPI"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"number\": $('Normalizar Payload UAZAPI').item.json.phone, \"text\": $('Decidir Atendimento (novo ou continuar)').item.json.resposta } }}",
+        "options": {}
       },
-      "id": "code-desativar-agente",
-      "name": "Desativar Agente para a Sessão",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "id": "http-enviar-resposta",
+      "name": "Enviar Resposta ao Lead (UAZAPI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        -1360,
-        320
+        1900,
+        -700
       ]
     },
     {
-      "parameters": {},
-      "id": "noop-handoff-registrado",
-      "name": "Fim - Handoff Humano Registrado",
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
+      "parameters": {
+        "jsCode": "// AJUSTAR: extrai o ID da mensagem enviada a partir da resposta da UAZAPI,\n// para conseguirmos reconhecer o eco dela no webhook e não disparar handoff sozinho.\nconst resposta = $json;\nconst externalId = resposta.id || resposta?.key?.id || resposta?.messageId || null;\n\nreturn [{\n  json: {\n    ...($('Decidir Atendimento (novo ou continuar)').item.json),\n    externalIdRespostaEnviada: externalId,\n  }\n}];"
+      },
+      "id": "code-extrair-id-enviado",
+      "name": "Extrair ID da Mensagem Enviada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
-        -1120,
-        320
+        2140,
+        -700
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO mensagens (atendimento_id, lead_id, remetente, conteudo, external_id)\nVALUES\n  ($1, $2, 'lead', $3, NULL),\n  ($1, $2, 'agente', $4, $5);",
+        "options": {
+          "queryReplacement": "={{ [$json.atendimento_id, $('Upsert Lead').item.json.id, $json.mensagemConsolidada, $json.resposta, $json.externalIdRespostaEnviada] }}"
+        }
+      },
+      "id": "pg-registrar-mensagens",
+      "name": "Registrar Mensagens",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2380,
+        -700
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://SUA_INSTANCIA.uazapi.com/send/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "SEU_TOKEN_UAZAPI"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"number\": \"SEU_GROUP_ID@g.us\", \"text\": ($('Normalizar Payload UAZAPI').item.json.pushName || $('Normalizar Payload UAZAPI').item.json.phone) + ' está ' + $('Decidir Atendimento (novo ou continuar)').item.json.classificacao.toUpperCase() + ' (' + $('Decidir Atendimento (novo ou continuar)').item.json.topico + ')' } }}",
+        "options": {}
+      },
+      "id": "http-notificar-grupo",
+      "name": "Notificar Grupo no WhatsApp (UAZAPI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2620,
+        -700
       ]
     }
   ],
   "connections": {
-    "Mensagem Recebida (Lead)": {
+    "Webhook UAZAPI (todas as mensagens)": {
       "main": [
         [
           {
-            "node": "Registrar Mensagem e Verificar Estado",
+            "node": "Normalizar Payload UAZAPI",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Registrar Mensagem e Verificar Estado": {
+    "Normalizar Payload UAZAPI": {
+      "main": [
+        [
+          {
+            "node": "Mensagem Enviada pelo Meu Número?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensagem Enviada pelo Meu Número?": {
+      "main": [
+        [
+          {
+            "node": "Verificar se é Eco do Próprio Bot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upsert Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar se é Eco do Próprio Bot": {
+      "main": [
+        [
+          {
+            "node": "Não Encontrou = Foi Humano (não é eco)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Não Encontrou = Foi Humano (não é eco)": {
+      "main": [
+        [
+          {
+            "node": "Desativar Agente (Handoff Humano)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fim - Eco da Própria Resposta do Bot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Desativar Agente (Handoff Humano)": {
+      "main": [
+        [
+          {
+            "node": "Fim - Handoff Registrado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Lead": {
       "main": [
         [
           {
@@ -390,7 +767,7 @@
       "main": [
         [
           {
-            "node": "É a 1ª Mensagem da Janela?",
+            "node": "Enfileirar Mensagem (Lock Atômico)",
             "type": "main",
             "index": 0
           }
@@ -398,6 +775,17 @@
         [
           {
             "node": "Fim - Atendente Humano Está Cuidando",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enfileirar Mensagem (Lock Atômico)": {
+      "main": [
+        [
+          {
+            "node": "É a 1ª Mensagem da Janela?",
             "type": "main",
             "index": 0
           }
@@ -426,14 +814,14 @@
       "main": [
         [
           {
-            "node": "Coletar Mensagens da Janela",
+            "node": "Coletar Fila e Limpar",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Coletar Mensagens da Janela": {
+    "Coletar Fila e Limpar": {
       "main": [
         [
           {
@@ -448,7 +836,7 @@
       "main": [
         [
           {
-            "node": "Qualificar Lead e Responder",
+            "node": "Montar Texto Consolidado",
             "type": "main",
             "index": 0
           }
@@ -462,11 +850,44 @@
         ]
       ]
     },
+    "Montar Texto Consolidado": {
+      "main": [
+        [
+          {
+            "node": "Buscar Último Atendimento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Último Atendimento": {
+      "main": [
+        [
+          {
+            "node": "Preparar Contexto e Calcular Gap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Contexto e Calcular Gap": {
+      "main": [
+        [
+          {
+            "node": "Qualificar Lead e Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Qualificar Lead e Responder": {
       "main": [
         [
           {
-            "node": "Enviar Resposta ao Lead",
+            "node": "Decidir Atendimento (novo ou continuar)",
             "type": "main",
             "index": 0
           }
@@ -484,18 +905,7 @@
         ]
       ]
     },
-    "Memória da Conversa (por Lead)": {
-      "ai_memory": [
-        [
-          {
-            "node": "Qualificar Lead e Responder",
-            "type": "ai_memory",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Formato de Saída (resposta + classificação)": {
+    "Formato de Saída": {
       "ai_outputParser": [
         [
           {
@@ -506,33 +916,84 @@
         ]
       ]
     },
-    "Enviar Resposta ao Lead": {
+    "Decidir Atendimento (novo ou continuar)": {
       "main": [
         [
           {
-            "node": "Registrar Classificação do Lead",
+            "node": "Atendimento Existente?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Mensagem Enviada Manualmente (Atendente)": {
+    "Atendimento Existente?": {
       "main": [
         [
           {
-            "node": "Desativar Agente para a Sessão",
+            "node": "Atualizar Atendimento Existente",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Criar Novo Atendimento",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Desativar Agente para a Sessão": {
+    "Atualizar Atendimento Existente": {
       "main": [
         [
           {
-            "node": "Fim - Handoff Humano Registrado",
+            "node": "Enviar Resposta ao Lead (UAZAPI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Criar Novo Atendimento": {
+      "main": [
+        [
+          {
+            "node": "Enviar Resposta ao Lead (UAZAPI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Resposta ao Lead (UAZAPI)": {
+      "main": [
+        [
+          {
+            "node": "Extrair ID da Mensagem Enviada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair ID da Mensagem Enviada": {
+      "main": [
+        [
+          {
+            "node": "Registrar Mensagens",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar Mensagens": {
+      "main": [
+        [
+          {
+            "node": "Notificar Grupo no WhatsApp (UAZAPI)",
             "type": "main",
             "index": 0
           }
