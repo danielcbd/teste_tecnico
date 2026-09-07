@@ -436,7 +436,7 @@
         "promptType": "define",
         "text": "=Mensagens novas do lead nesta janela de atendimento (podem ter sido enviadas em pedaços, trate como um único contexto):\n\n{{ $json.mensagemConsolidada }}\n\n---\n{{ $json.temAtendimentoAnterior ? ('Você já atendeu este lead antes.\\nResumo do atendimento anterior: ' + $json.resumoAnterior + '\\nClassificação anterior: ' + $json.classificacaoAnterior + '\\nTempo desde a última mensagem: ' + Math.round($json.gapHoras) + ' horas.') : 'Este é o primeiro contato deste lead - não existe histórico anterior.' }}\n{{ $json.possivelNovoAssunto ? 'Como faz tempo desde o último contato, avalie com atenção se a mensagem nova continua o MESMO assunto do resumo acima ou se é um ASSUNTO NOVO, e preencha o campo mesmo_assunto de acordo.' : '' }}",
         "options": {
-          "systemMessage": "Você é o assistente virtual de atendimento de uma agência de viagens (WhatsApp).\n\nObjetivo:\n1. Se houver histórico anterior e for o MESMO assunto, cumprimente o lead reconhecendo a conversa anterior (como um atendente humano que lembra do cliente), sem repetir perguntas já respondidas antes.\n2. Se não houver histórico, ou se for um ASSUNTO NOVO, conduza como um primeiro atendimento: boas-vindas + perguntas de qualificação.\n3. Conduza a conversa para entender: destino desejado, período/data pretendida, número de pessoas, orçamento aproximado e urgência.\n4. Nunca invente informações que o lead não forneceu.\n5. Classifique o lead em uma das categorias:\n   - quente: data definida/próxima, orçamento mencionado, urgência clara, ou pede para fechar/agendar.\n   - morno: interesse real com alguma informação relevante, mas sem urgência ou dados completos.\n   - frio: mensagem vaga, curiosidade, sem intenção clara, ou ignora as perguntas de qualificação.\n6. Gere um resumo atualizado do atendimento (curto, objetivo, útil para você mesmo se lembrar depois) e um tópico curto (ex.: \"Pacote Cancún - casal - julho\").\n7. Preencha mesmo_assunto = true apenas quando a nova mensagem for claramente uma continuação do resumo anterior fornecido; caso contrário false. Se não havia atendimento anterior, preencha mesmo_assunto = false.\n\nResponda sempre em português do Brasil, em tom cordial e profissional."
+          "systemMessage": "Você é o assistente virtual de atendimento de uma agência de viagens (WhatsApp).\n\nObjetivo:\n1. Se houver histórico anterior e for o MESMO assunto, cumprimente o lead reconhecendo a conversa anterior (como um atendente humano que lembra do cliente), sem repetir perguntas já respondidas antes.\n2. Se não houver histórico, ou se for um ASSUNTO NOVO, conduza como um primeiro atendimento: boas-vindas + perguntas de qualificação.\n3. Conduza a conversa para entender: destino desejado, período/data pretendida, número de pessoas, orçamento aproximado e urgência.\n4. Nunca invente informações que o lead não forneceu.\n5. Classifique o lead em uma das categorias:\n   - quente: data definida/próxima, orçamento mencionado, urgência clara, ou pede para fechar/agendar.\n   - morno: interesse real com alguma informação relevante, mas sem urgência ou dados completos.\n   - frio: mensagem vaga, curiosidade, sem intenção clara, ou ignora as perguntas de qualificação.\n6. Gere um resumo atualizado do atendimento (curto, objetivo, útil para você mesmo se lembrar depois) e um tópico curto (ex.: \"Pacote Cancún - casal - julho\").\n7. Preencha mesmo_assunto = true apenas quando a nova mensagem for claramente uma continuação do resumo anterior fornecido; caso contrário false. Se não havia atendimento anterior, preencha mesmo_assunto = false.\n8. NÃO escreva a resposta como um texto único e grande. Quebre em `mensagens_resposta`: uma lista de 1 a 4 mensagens curtas e naturais, como uma pessoa realmente digitaria no WhatsApp em várias mensagens seguidas (ex.: uma saudação separada da pergunta de qualificação). Cada item da lista é uma mensagem/bolha separada.\n\nResponda sempre em português do Brasil, em tom cordial e profissional."
         }
       },
       "id": "agent-qualificar-lead",
@@ -477,7 +477,7 @@
     {
       "parameters": {
         "schemaType": "manual",
-        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"resposta\": { \"type\": \"string\", \"description\": \"Mensagem a ser enviada de volta ao lead\" },\n    \"classificacao\": { \"type\": \"string\", \"enum\": [\"frio\", \"morno\", \"quente\"] },\n    \"topico\": { \"type\": \"string\", \"description\": \"Rótulo curto do assunto deste atendimento\" },\n    \"resumo_atendimento\": { \"type\": \"string\", \"description\": \"Resumo atualizado e cumulativo do atendimento\" },\n    \"mesmo_assunto\": { \"type\": \"boolean\", \"description\": \"true se continua o atendimento anterior, false se é assunto novo\" }\n  },\n  \"required\": [\"resposta\", \"classificacao\", \"topico\", \"resumo_atendimento\", \"mesmo_assunto\"]\n}"
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"mensagens_resposta\": {\n      \"type\": \"array\",\n      \"items\": { \"type\": \"string\" },\n      \"minItems\": 1,\n      \"maxItems\": 4,\n      \"description\": \"Lista de 1 a 4 mensagens curtas, cada uma como uma bolha separada de WhatsApp, simulando alguém digitando em partes ao invés de um texto único grande\"\n    },\n    \"classificacao\": { \"type\": \"string\", \"enum\": [\"frio\", \"morno\", \"quente\"] },\n    \"topico\": { \"type\": \"string\", \"description\": \"Rótulo curto do assunto deste atendimento\" },\n    \"resumo_atendimento\": { \"type\": \"string\", \"description\": \"Resumo atualizado e cumulativo do atendimento\" },\n    \"mesmo_assunto\": { \"type\": \"boolean\", \"description\": \"true se continua o atendimento anterior, false se é assunto novo\" }\n  },\n  \"required\": [\"mensagens_resposta\", \"classificacao\", \"topico\", \"resumo_atendimento\", \"mesmo_assunto\"]\n}"
       },
       "id": "output-parser",
       "name": "Formato de Saída",
@@ -582,6 +582,98 @@
     },
     {
       "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO mensagens (atendimento_id, lead_id, remetente, conteudo)\nVALUES ($1, $2, 'lead', $3)\nRETURNING atendimento_id;",
+        "options": {
+          "queryReplacement": "={{ [$json.atendimento_id, $('Upsert Lead').item.json.id, $('Decidir Atendimento (novo ou continuar)').item.json.mensagemConsolidada] }}"
+        }
+      },
+      "id": "pg-registrar-mensagem-lead",
+      "name": "Registrar Mensagem do Lead",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1900,
+        -700
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Quebra a resposta da IA (já vem fatiada em bolhas) em vários ITENS,\n// um por bolha, para percorrer no loop de \"digitando + enviar\" logo abaixo.\n// O tempo de \"digitando\" é estimado pelo tamanho do texto, simulando uma\n// velocidade de digitação humana (limitado entre 1.2s e 4.5s por bolha).\nconst mensagens = $('Decidir Atendimento (novo ou continuar)').item.json.mensagens_resposta || [];\nconst atendimentoId = $json.atendimento_id;\nconst phone = $('Normalizar Payload UAZAPI').item.json.phone;\n\nfunction calcularDelaySegundos(texto) {\n  const base = 1.0;\n  const segundosPorCaractere = 0.03;\n  const bruto = base + texto.length * segundosPorCaractere;\n  return Math.min(Math.max(bruto, 1.2), 4.5);\n}\n\nreturn mensagens.map((texto) => ({\n  json: {\n    texto,\n    delaySegundos: calcularDelaySegundos(texto),\n    atendimentoId,\n    phone,\n  },\n}));"
+      },
+      "id": "code-preparar-fila-bolhas",
+      "name": "Preparar Fila de Mensagens Picadas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2140,
+        -700
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "loop-mensagens-picadas",
+      "name": "Loop Mensagens Picadas",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        2380,
+        -700
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://SUA_INSTANCIA.uazapi.com/chat/presence",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "SEU_TOKEN_UAZAPI"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"number\": $json.phone, \"presence\": \"composing\" } }}",
+        "options": {}
+      },
+      "id": "http-enviar-digitando",
+      "name": "Enviar Status 'Digitando...' (UAZAPI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2660,
+        -560
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "unit": "seconds",
+        "amount": "={{ $json.delaySegundos }}"
+      },
+      "id": "wait-tempo-digitacao",
+      "name": "Aguardar Tempo de Digitação",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2900,
+        -560
+      ]
+    },
+    {
+      "parameters": {
         "method": "POST",
         "url": "https://SUA_INSTANCIA.uazapi.com/send/text",
         "sendHeaders": true,
@@ -595,46 +687,46 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { \"number\": $('Normalizar Payload UAZAPI').item.json.phone, \"text\": $('Decidir Atendimento (novo ou continuar)').item.json.resposta } }}",
+        "jsonBody": "={{ { \"number\": $json.phone, \"text\": $json.texto } }}",
         "options": {}
       },
-      "id": "http-enviar-resposta",
-      "name": "Enviar Resposta ao Lead (UAZAPI)",
+      "id": "http-enviar-bolha",
+      "name": "Enviar Mensagem (Bolha) (UAZAPI)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1900,
-        -700
+        3140,
+        -560
       ]
     },
     {
       "parameters": {
-        "jsCode": "// AJUSTAR: extrai o ID da mensagem enviada a partir da resposta da UAZAPI,\n// para conseguirmos reconhecer o eco dela no webhook e não disparar handoff sozinho.\nconst resposta = $json;\nconst externalId = resposta.id || resposta?.key?.id || resposta?.messageId || null;\n\nreturn [{\n  json: {\n    ...($('Decidir Atendimento (novo ou continuar)').item.json),\n    externalIdRespostaEnviada: externalId,\n  }\n}];"
+        "jsCode": "// AJUSTAR: extrai o ID retornado pela UAZAPI para esta bolha específica,\n// para reconhecer o eco dela no webhook e não disparar handoff sozinho.\nconst resposta = $json;\nconst externalId = resposta.id || resposta?.key?.id || resposta?.messageId || null;\nconst itemDoLoop = $('Loop Mensagens Picadas').item.json;\n\nreturn [{\n  json: {\n    texto: itemDoLoop.texto,\n    atendimentoId: itemDoLoop.atendimentoId,\n    externalId,\n  },\n}];"
       },
-      "id": "code-extrair-id-enviado",
-      "name": "Extrair ID da Mensagem Enviada",
+      "id": "code-extrair-id-bolha",
+      "name": "Extrair ID da Bolha Enviada",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2140,
-        -700
+        3380,
+        -560
       ]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO mensagens (atendimento_id, lead_id, remetente, conteudo, external_id)\nVALUES\n  ($1, $2, 'lead', $3, NULL),\n  ($1, $2, 'agente', $4, $5);",
+        "query": "INSERT INTO mensagens (atendimento_id, lead_id, remetente, conteudo, external_id)\nVALUES ($1, $2, 'agente', $3, $4);",
         "options": {
-          "queryReplacement": "={{ [$json.atendimento_id, $('Upsert Lead').item.json.id, $json.mensagemConsolidada, $json.resposta, $json.externalIdRespostaEnviada] }}"
+          "queryReplacement": "={{ [$json.atendimentoId, $('Upsert Lead').item.json.id, $json.texto, $json.externalId] }}"
         }
       },
-      "id": "pg-registrar-mensagens",
-      "name": "Registrar Mensagens",
+      "id": "pg-registrar-bolha",
+      "name": "Registrar Mensagem do Agente (Bolha)",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        2380,
-        -700
+        3620,
+        -560
       ],
       "credentials": {
         "postgres": {
@@ -666,8 +758,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2620,
-        -700
+        2660,
+        -820
       ]
     }
   ],
@@ -949,7 +1041,7 @@
       "main": [
         [
           {
-            "node": "Enviar Resposta ao Lead (UAZAPI)",
+            "node": "Registrar Mensagem do Lead",
             "type": "main",
             "index": 0
           }
@@ -960,40 +1052,102 @@
       "main": [
         [
           {
-            "node": "Enviar Resposta ao Lead (UAZAPI)",
+            "node": "Registrar Mensagem do Lead",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Enviar Resposta ao Lead (UAZAPI)": {
+    "Registrar Mensagem do Lead": {
       "main": [
         [
           {
-            "node": "Extrair ID da Mensagem Enviada",
+            "node": "Preparar Fila de Mensagens Picadas",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Extrair ID da Mensagem Enviada": {
+    "Preparar Fila de Mensagens Picadas": {
       "main": [
         [
           {
-            "node": "Registrar Mensagens",
+            "node": "Loop Mensagens Picadas",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Registrar Mensagens": {
+    "Loop Mensagens Picadas": {
       "main": [
         [
           {
             "node": "Notificar Grupo no WhatsApp (UAZAPI)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enviar Status 'Digitando...' (UAZAPI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Status 'Digitando...' (UAZAPI)": {
+      "main": [
+        [
+          {
+            "node": "Aguardar Tempo de Digitação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar Tempo de Digitação": {
+      "main": [
+        [
+          {
+            "node": "Enviar Mensagem (Bolha) (UAZAPI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Mensagem (Bolha) (UAZAPI)": {
+      "main": [
+        [
+          {
+            "node": "Extrair ID da Bolha Enviada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair ID da Bolha Enviada": {
+      "main": [
+        [
+          {
+            "node": "Registrar Mensagem do Agente (Bolha)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar Mensagem do Agente (Bolha)": {
+      "main": [
+        [
+          {
+            "node": "Loop Mensagens Picadas",
             "type": "main",
             "index": 0
           }

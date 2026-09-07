@@ -11,6 +11,8 @@ Workflow de n8n para realizar o atendimento de leads de uma agência de viagens 
   "atendimento" em vez de misturar com o histórico antigo.
 - **Qualificação frio / morno / quente** a cada atendimento, com notificação automática em um
   **grupo do WhatsApp**.
+- **"Digitando..." + respostas picadas**: antes de cada mensagem o lead vê o indicador de digitando,
+  e a resposta chega em várias mensagens curtas (como um humano digitaria), não um texto único.
 - **Handoff humano**: se você responder manualmente pelo WhatsApp, o agente se desativa para
   aquele lead e para de interagir.
 
@@ -18,19 +20,20 @@ Workflow de n8n para realizar o atendimento de leads de uma agência de viagens 
 
 Não consegui acessar a documentação oficial da UAZAPI a partir deste ambiente (o domínio
 `uazapi.com` está bloqueado pela política de rede do sandbox onde montei este workflow). Os nodes
-`Normalizar Payload UAZAPI`, `Enviar Resposta ao Lead (UAZAPI)` e `Notificar Grupo no WhatsApp
-(UAZAPI)` foram montados seguindo o formato mais comum entre APIs de WhatsApp não-oficiais
-baseadas em Baileys (mesma família da Evolution API), mas **os nomes de campo/endpoint podem não
-bater exatamente com sua instância**. Antes de ativar:
+`Normalizar Payload UAZAPI`, `Enviar Status 'Digitando...' (UAZAPI)`, `Enviar Mensagem (Bolha)
+(UAZAPI)` e `Notificar Grupo no WhatsApp (UAZAPI)` foram montados seguindo o formato mais comum
+entre APIs de WhatsApp não-oficiais baseadas em Baileys (mesma família da Evolution API), mas **os
+nomes de campo/endpoint podem não bater exatamente com sua instância**. Antes de ativar:
 
 1. Configure o webhook da sua instância UAZAPI apontando para a URL do node
    `Webhook UAZAPI (todas as mensagens)` e dispare uma mensagem de teste.
 2. Abra a execução no n8n, veja o `body` que chegou de verdade e ajuste o node **Normalizar
    Payload UAZAPI** (campos `phone`, `text`, `fromMe`, `externalId`, `pushName`) para bater com o
    payload real.
-3. Confirme no painel/docs da UAZAPI: o endpoint de envio de texto, o header de autenticação
-   (assumi `token`) e o formato do ID de mensagem retornado — ajuste os nodes **Enviar Resposta ao
-   Lead** e **Extrair ID da Mensagem Enviada**.
+3. Confirme no painel/docs da UAZAPI: o endpoint de envio de texto, o endpoint de status de
+   presença/digitando, o header de autenticação (assumi `token`) e o formato do ID de mensagem
+   retornado — ajuste os nodes **Enviar Status 'Digitando...'**, **Enviar Mensagem (Bolha)** e
+   **Extrair ID da Bolha Enviada**.
 4. Pegue o **ID do grupo** do WhatsApp de destino (geralmente termina em `@g.us`) e substitua o
    placeholder `SEU_GROUP_ID@g.us` no node **Notificar Grupo no WhatsApp**.
 
@@ -109,10 +112,11 @@ humano que lembra da conversa" quando é continuação, e como um primeiro atend
 
 ### 4. Qualificação do lead (frio / morno / quente) + aviso no grupo
 
-O node **Qualificar Lead e Responder** retorna, além da resposta ao lead:
+O node **Qualificar Lead e Responder** retorna:
 
 | Campo | Uso |
 |---|---|
+| `mensagens_resposta` | lista de 1 a 4 mensagens curtas (bolhas), ver seção 4.1 |
 | `classificacao` | `frio`, `morno` ou `quente` |
 | `topico` | rótulo curto do assunto (ex.: "Pacote Cancún - casal - julho") |
 | `resumo_atendimento` | resumo cumulativo, salvo em `atendimentos.resumo` para uso futuro |
@@ -131,6 +135,32 @@ Depois de responder ao lead, o node **Notificar Grupo no WhatsApp** manda uma me
 > João Silva está QUENTE (Pacote Cancún - casal - julho)
 
 para o grupo configurado, para o time comercial acompanhar sem precisar abrir o chat individual.
+
+### 4.1. "Digitando..." + resposta em várias mensagens picadas
+
+Em vez de mandar a resposta inteira de uma vez (o que soa mais como bot), o agente já gera
+`mensagens_resposta` como uma **lista** de 1 a 4 mensagens curtas — o jeito natural como uma pessoa
+digitaria "Oi! tudo bem?" numa mensagem e "me conta, pra quantas pessoas seria a viagem?" em outra,
+em vez de um parágrafo só.
+
+O node **Preparar Fila de Mensagens Picadas** transforma essa lista em um item por mensagem, cada
+um com um `delaySegundos` calculado pelo tamanho do texto (fórmula simples: `1s base + 0.03s por
+caractere`, limitado entre 1.2s e 4.5s — ajustável no próprio Code node). O **Loop Mensagens
+Picadas** então, para cada bolha, repete o ciclo:
+
+1. **Enviar Status 'Digitando...'** → chama o endpoint de presença da UAZAPI com `presence:
+   "composing"`, fazendo aparecer o "digitando..." no WhatsApp do lead.
+2. **Aguardar Tempo de Digitação** → espera o tempo calculado, simulando a velocidade de digitação.
+3. **Enviar Mensagem (Bolha)** → manda aquele pedaço da resposta.
+4. **Registrar Mensagem do Agente (Bolha)** → salva no histórico e guarda o `external_id` daquela
+   bolha (para o guard de eco da seção 1 funcionar em cada mensagem enviada, não só na primeira).
+
+Só depois que todas as bolhas forem enviadas (`saída "done"` do loop) é que o workflow segue para
+notificar o grupo.
+
+> O endpoint de presença (`/chat/presence`) é outro ponto que não pude confirmar na documentação da
+> UAZAPI (mesmo bloqueio de rede mencionado no aviso do topo) — confirme o nome exato do endpoint e
+> do campo de estado (`composing`/`typing`/etc.) no painel da sua instância.
 
 ### 5. Desativação ao responder manualmente (handoff)
 
