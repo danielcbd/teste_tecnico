@@ -41,6 +41,49 @@
           },
           "conditions": [
             {
+              "id": "cond-numero-teste",
+              "leftValue": "={{ $json.phone }}",
+              "rightValue": "5527992240305",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-filtro-numero-teste",
+      "name": "Filtro de Número (Somente Teste)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1840,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "noop-fora-do-filtro",
+      "name": "Fim - Número Fora do Filtro de Teste",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -1840,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
               "id": "cond-from-me",
               "leftValue": "={{ $json.fromMe }}",
               "rightValue": true,
@@ -1013,7 +1056,25 @@
       "main": [
         [
           {
+            "node": "Filtro de Número (Somente Teste)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtro de Número (Somente Teste)": {
+      "main": [
+        [
+          {
             "node": "Mensagem Enviada pelo Meu Número?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fim - Número Fora do Filtro de Teste",
             "type": "main",
             "index": 0
           }

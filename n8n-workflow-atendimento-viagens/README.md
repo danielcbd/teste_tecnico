@@ -64,6 +64,18 @@ chegou no `Listen for test event`, eu ajusto esses nodes com precisão total.
 
 ## Como funciona
 
+### 0. Filtro de número (somente teste)
+
+Logo após normalizar o payload, o node **Filtro de Número (Somente Teste)** só deixa passar
+mensagens cujo `phone` seja `5527992240305` — qualquer outro número cai direto em **Fim - Número
+Fora do Filtro de Teste**, sem gerar nenhum efeito colateral (nada é gravado no banco, nada é
+enviado). Isso serve para testar o workflow com segurança, sem responder leads reais enquanto você
+valida o comportamento.
+
+> **Antes de ir para produção, remova (ou desative) esse node** — ligue a saída de
+> `Normalizar Payload UAZAPI` direto em `Mensagem Enviada pelo Meu Número?`, ou troque a condição
+> por uma lista de números liberados, conforme a necessidade.
+
 ### 1. Um único webhook para tudo — e o problema do "eco do próprio bot"
 
 A UAZAPI normalmente manda **todas** as mensagens da instância (recebidas do lead e enviadas por
