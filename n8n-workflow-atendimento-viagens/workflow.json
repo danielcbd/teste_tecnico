@@ -4,7 +4,7 @@
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "uazapi-webhook",
+        "path": "uazapi",
         "responseMode": "onReceived",
         "options": {}
       },
@@ -16,7 +16,7 @@
         -2200,
         0
       ],
-      "webhookId": "uazapi-webhook"
+      "webhookId": "uazapi"
     },
     {
       "parameters": {
@@ -404,7 +404,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://SUA_INSTANCIA.uazapi.com/send/text",
+        "url": "https://danielcbd-ia.uazapi.com/send/text",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -467,7 +467,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://SUA_INSTANCIA.uazapi.com/send/text",
+        "url": "https://danielcbd-ia.uazapi.com/send/text",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -867,7 +867,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://SUA_INSTANCIA.uazapi.com/chat/presence",
+        "url": "https://danielcbd-ia.uazapi.com/chat/presence",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -909,7 +909,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://SUA_INSTANCIA.uazapi.com/send/text",
+        "url": "https://danielcbd-ia.uazapi.com/send/text",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -972,7 +972,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://SUA_INSTANCIA.uazapi.com/send/text",
+        "url": "https://danielcbd-ia.uazapi.com/send/text",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

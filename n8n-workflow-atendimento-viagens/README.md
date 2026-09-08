@@ -21,28 +21,34 @@ Workflow de n8n para realizar o atendimento de leads de uma agência de viagens 
 
 ## ⚠️ Sobre a integração com UAZAPI
 
-Não consegui acessar a documentação oficial da UAZAPI a partir deste ambiente (o domínio
-`uazapi.com` está bloqueado pela política de rede do sandbox onde montei este workflow). Os nodes
-`Normalizar Payload UAZAPI`, `Enviar Status 'Digitando...' (UAZAPI)`, `Enviar Mensagem (Bolha)
-(UAZAPI)`, `Enviar Aviso de Transbordo ao Lead (UAZAPI)`, `Notificar Grupo no WhatsApp (UAZAPI)` e
-`Notificar Grupo - Transbordo Urgente (UAZAPI)` foram montados seguindo o formato mais comum entre
-APIs de WhatsApp não-oficiais baseadas em Baileys (mesma família da Evolution API), mas **os nomes
-de campo/endpoint podem não bater exatamente com sua instância**. Antes de ativar:
+Sua instância é `https://danielcbd-ia.uazapi.com` — já preenchi essa URL em todos os nodes HTTP
+(`Enviar Status 'Digitando...'`, `Enviar Mensagem (Bolha)`, `Enviar Aviso de Transbordo ao Lead`,
+`Notificar Grupo no WhatsApp` e `Notificar Grupo - Transbordo Urgente`). Também ajustei o webhook
+de entrada (`Webhook UAZAPI (todas as mensagens)`) para o path `uazapi`, igual ao que aparece no
+seu n8n (`.../webhook/uazapi`).
 
-1. Configure o webhook da sua instância UAZAPI apontando para a URL do node
-   `Webhook UAZAPI (todas as mensagens)` e dispare uma mensagem de teste.
-2. Abra a execução no n8n, veja o `body` que chegou de verdade e ajuste o node **Normalizar
-   Payload UAZAPI** (campos `phone`, `text`, `fromMe`, `externalId`, `pushName`) para bater com o
-   payload real.
-3. Confirme no painel/docs da UAZAPI: o endpoint de envio de texto, o endpoint de status de
-   presença/digitando, o header de autenticação (assumi `token`) e o formato do ID de mensagem
-   retornado — ajuste os nodes **Enviar Status 'Digitando...'**, **Enviar Mensagem (Bolha)** e
-   **Extrair ID da Bolha Enviada**.
+O que **ainda não pude confirmar**: continuo sem conseguir acessar `uazapi.com` (nem esse
+subdomínio específico) a partir deste ambiente — a rede aqui bloqueia qualquer `*.uazapi.com`, então
+não consegui nem validar o formato de resposta do `/send/text` nem confirmar se `/chat/presence` é
+o endpoint certo para o status de "digitando". Os nodes foram montados seguindo o formato mais
+comum entre APIs de WhatsApp não-oficiais baseadas em Baileys (mesma família da Evolution API), mas
+**os nomes de campo/endpoint podem não bater exatamente com sua instância**. Antes de ativar:
+
+1. No n8n, clique em **Listen for test event** no node `Webhook UAZAPI (todas as mensagens)` e
+   dispare uma mensagem de teste pelo WhatsApp.
+2. Veja o `body` que chegou de verdade e ajuste o node **Normalizar Payload UAZAPI** (campos
+   `phone`, `text`, `fromMe`, `externalId`, `pushName`) para bater com o payload real.
+3. Confirme no painel/docs da UAZAPI: o header de autenticação (assumi `token` — pode ser
+   `Authorization: Bearer ...` ou outro nome), o endpoint de status de presença/digitando
+   (`/chat/presence` é um chute) e o formato do ID de mensagem retornado pelo `/send/text` — ajuste
+   os nodes **Enviar Status 'Digitando...'**, **Enviar Mensagem (Bolha)** e **Extrair ID da Bolha
+   Enviada**.
 4. Pegue o **ID do grupo** do WhatsApp de destino (geralmente termina em `@g.us`) e substitua o
-   placeholder `SEU_GROUP_ID@g.us` no node **Notificar Grupo no WhatsApp**.
+   placeholder `SEU_GROUP_ID@g.us` nos nodes **Notificar Grupo no WhatsApp** e **Notificar Grupo -
+   Transbordo Urgente**.
 
-Se puder me colar um exemplo real do payload do webhook e do endpoint de envio (ex.: do
-Postman/curl que a UAZAPI fornece), eu ajusto esses três nodes com precisão.
+Se puder me colar o token real (ou só confirmar o nome do header) e um exemplo do payload que
+chegou no `Listen for test event`, eu ajusto esses nodes com precisão total.
 
 ## Como importar
 
