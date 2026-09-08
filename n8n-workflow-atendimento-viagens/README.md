@@ -15,15 +15,19 @@ Workflow de n8n para realizar o atendimento de leads de uma agência de viagens 
   e a resposta chega em várias mensagens curtas (como um humano digitaria), não um texto único.
 - **Handoff humano**: se você responder manualmente pelo WhatsApp, o agente se desativa para
   aquele lead e para de interagir.
+- **Guardrail de transbordo**: reclamação (voo atrasado, bagagem extraviada, problema com reserva
+  já paga), cliente irritado ou pedido explícito de humano vão direto para atendimento humano —
+  a IA de vendas nunca chega a responder essas mensagens.
 
 ## ⚠️ Sobre a integração com UAZAPI
 
 Não consegui acessar a documentação oficial da UAZAPI a partir deste ambiente (o domínio
 `uazapi.com` está bloqueado pela política de rede do sandbox onde montei este workflow). Os nodes
 `Normalizar Payload UAZAPI`, `Enviar Status 'Digitando...' (UAZAPI)`, `Enviar Mensagem (Bolha)
-(UAZAPI)` e `Notificar Grupo no WhatsApp (UAZAPI)` foram montados seguindo o formato mais comum
-entre APIs de WhatsApp não-oficiais baseadas em Baileys (mesma família da Evolution API), mas **os
-nomes de campo/endpoint podem não bater exatamente com sua instância**. Antes de ativar:
+(UAZAPI)`, `Enviar Aviso de Transbordo ao Lead (UAZAPI)`, `Notificar Grupo no WhatsApp (UAZAPI)` e
+`Notificar Grupo - Transbordo Urgente (UAZAPI)` foram montados seguindo o formato mais comum entre
+APIs de WhatsApp não-oficiais baseadas em Baileys (mesma família da Evolution API), mas **os nomes
+de campo/endpoint podem não bater exatamente com sua instância**. Antes de ativar:
 
 1. Configure o webhook da sua instância UAZAPI apontando para a URL do node
    `Webhook UAZAPI (todas as mensagens)` e dispare uma mensagem de teste.
@@ -69,7 +73,43 @@ Eco do Próprio Bot**):
 - **Achou** → é só o eco da própria resposta da IA → não faz nada.
 - **Não achou** → foi você digitando manualmente no WhatsApp → dispara o handoff (seção 4).
 
-### 2. Debounce de 1 minuto (mensagens picadas viram contexto único)
+### 2. Guardrail de transbordo (reclamação / cliente irritado)
+
+Antes de qualquer coisa — inclusive antes da fila de debounce, para não fazer o cliente esperar
+1 minuto num caso sensível — **toda mensagem recebida** (com o agente ativo) passa pelo node
+**Triagem de Guardrail**, um Agent de IA dedicado que analisa só aquela mensagem (mais o resumo do
+atendimento anterior, se houver, como contexto) e decide se ela deve ir direto para um atendente
+humano, sem a IA de vendas nunca chegar a responder.
+
+Critérios usados no prompt (ver node **Triagem de Guardrail**):
+
+| Categoria | Quando marca `precisa_transbordo = true` |
+|---|---|
+| `reclamacao_operacional` | voo atrasado/cancelado, overbooking, bagagem extraviada/danificada, problema com reserva já paga, pedido de reembolso, remarcação urgente |
+| `cliente_irritado` | tom de raiva, frustração, xingamentos, ameaças (Procon, processo, etc.) |
+| `pedido_atendente_humano` | pediu explicitamente para falar com atendente/gerente |
+| `normal` | conversa comercial normal de pré-venda → segue para a qualificação (seção 4) |
+
+Na dúvida, o prompt instrui a IA a **preferir transbordar** (um falso positivo é bem menos grave
+que deixar a IA tentar resolver uma reclamação real ou acalmar um cliente irritado).
+
+Quando `precisa_transbordo = true`, o workflow (sem chamar o agente de vendas em nenhum momento):
+
+1. **Marcar Atendimento como Transbordado** — grava/atualiza a linha em `atendimentos` com
+   `status = 'transbordado'` e `motivo_transbordo` (reaproveita o atendimento em aberto, se
+   existir, via um `INSERT ... ON CONFLICT` num só passo).
+2. **Desativar Agente (Guardrail)** — mesmo mecanismo do handoff manual (`agent_active = false`):
+   a partir daqui a IA para de responder esse lead completamente, igual a um handoff humano.
+3. Envia uma mensagem **fixa e genérica** ao lead (não gerada pela IA, de propósito, para não
+   arriscar a IA improvisando sobre um assunto sensível): _"Recebi sua mensagem e entendo a
+   situação. Vou te transferir agora para um de nossos atendentes..."_.
+4. **Notificar Grupo - Transbordo Urgente** — manda pro grupo do WhatsApp um aviso com 🚨, a
+   categoria, o motivo e a própria mensagem do cliente, para o atendente humano já assumir com
+   contexto completo, sem precisar abrir o chat individual primeiro.
+
+Se a mensagem for considerada `normal`, o fluxo segue normalmente para a fila de debounce (seção 3).
+
+### 3. Debounce de 1 minuto (mensagens picadas viram contexto único)
 
 O estado de fila fica na própria tabela `leads` (`waiting` + `fila_pendente`), com um `UPDATE ...
 FOR UPDATE` atômico (node **Enfileirar Mensagem**) para evitar corrida quando várias mensagens
@@ -84,7 +124,7 @@ chegam quase juntas:
 Por estar no banco (e não em memória do n8n), esse controle funciona mesmo com múltiplas instâncias
 do n8n rodando em paralelo (worker mode).
 
-### 3. Memória entre dias + detecção de assunto novo
+### 4. Memória entre dias + detecção de assunto novo
 
 Cada linha da tabela `atendimentos` representa uma "conversa/assunto" com um lead — um mesmo lead
 (`leads`) pode ter vários atendimentos ao longo do tempo.
@@ -110,13 +150,14 @@ O agente sempre recebe o resumo anterior (quando relevante) no prompt, então el
 humano que lembra da conversa" quando é continuação, e como um primeiro atendimento normal quando
 é assunto novo ou lead novo.
 
-### 4. Qualificação do lead (frio / morno / quente) + aviso no grupo
+### 5. Qualificação do lead (frio / morno / quente) + aviso no grupo
 
-O node **Qualificar Lead e Responder** retorna:
+Só chega até aqui quem o guardrail da seção 2 classificou como `normal`. O node **Qualificar Lead
+e Responder** retorna:
 
 | Campo | Uso |
 |---|---|
-| `mensagens_resposta` | lista de 1 a 4 mensagens curtas (bolhas), ver seção 4.1 |
+| `mensagens_resposta` | lista de 1 a 4 mensagens curtas (bolhas), ver seção 5.1 |
 | `classificacao` | `frio`, `morno` ou `quente` |
 | `topico` | rótulo curto do assunto (ex.: "Pacote Cancún - casal - julho") |
 | `resumo_atendimento` | resumo cumulativo, salvo em `atendimentos.resumo` para uso futuro |
@@ -136,7 +177,7 @@ Depois de responder ao lead, o node **Notificar Grupo no WhatsApp** manda uma me
 
 para o grupo configurado, para o time comercial acompanhar sem precisar abrir o chat individual.
 
-### 4.1. "Digitando..." + resposta em várias mensagens picadas
+### 5.1. "Digitando..." + resposta em várias mensagens picadas
 
 Em vez de mandar a resposta inteira de uma vez (o que soa mais como bot), o agente já gera
 `mensagens_resposta` como uma **lista** de 1 a 4 mensagens curtas — o jeito natural como uma pessoa
@@ -162,7 +203,7 @@ notificar o grupo.
 > UAZAPI (mesmo bloqueio de rede mencionado no aviso do topo) — confirme o nome exato do endpoint e
 > do campo de estado (`composing`/`typing`/etc.) no painel da sua instância.
 
-### 5. Desativação ao responder manualmente (handoff)
+### 6. Desativação ao responder manualmente (handoff)
 
 Coberto na seção 1 (detecção via `fromMe` + checagem de eco). Quando confirmado que foi você quem
 respondeu manualmente, o node **Desativar Agente (Handoff Humano)** marca

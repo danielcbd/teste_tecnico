@@ -229,7 +229,277 @@
       "typeVersion": 1,
       "position": [
         -1000,
-        -360
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, topico, resumo, classificacao, last_message_at\nFROM atendimentos\nWHERE lead_id = $1\nORDER BY last_message_at DESC\nLIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ [$('Upsert Lead').item.json.id] }}"
+        }
+      },
+      "id": "pg-buscar-atendimento",
+      "name": "Buscar Último Atendimento",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1000,
+        -180
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Decide se, à primeira vista, é plausível ser um assunto novo (usado depois,\n// na hora de responder). Regra: se o lead falou há pouco tempo (ex.: dentro de\n// 6h), é claramente a mesma conversa. Só quando o intervalo é grande (ex.: o\n// caso de retornar 7 dias depois) é que vale a pena perguntar à IA se é\n// continuação ou assunto novo.\nconst LIMITE_HORAS_MESMO_ASSUNTO = 6;\n\nconst rows = $input.all();\nconst atendimentoAnterior = rows.length > 0 ? rows[0].json : null;\n\nlet gapHoras = null;\nlet possivelNovoAssunto = true;\n\nif (atendimentoAnterior) {\n  const last = new Date(atendimentoAnterior.last_message_at);\n  gapHoras = (Date.now() - last.getTime()) / (1000 * 60 * 60);\n  possivelNovoAssunto = gapHoras > LIMITE_HORAS_MESMO_ASSUNTO;\n}\n\nreturn [{\n  json: {\n    temAtendimentoAnterior: !!atendimentoAnterior,\n    atendimentoAnteriorId: atendimentoAnterior ? atendimentoAnterior.id : null,\n    topicoAnterior: atendimentoAnterior ? atendimentoAnterior.topico : null,\n    resumoAnterior: atendimentoAnterior ? atendimentoAnterior.resumo : null,\n    classificacaoAnterior: atendimentoAnterior ? atendimentoAnterior.classificacao : null,\n    gapHoras,\n    possivelNovoAssunto,\n  }\n}];"
+      },
+      "id": "code-preparar-contexto",
+      "name": "Preparar Contexto e Calcular Gap",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -760,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Resumo do atendimento anterior deste lead, se houver (use só como contexto, não é a mensagem atual):\n{{ $('Preparar Contexto e Calcular Gap').item.json.resumoAnterior || 'nenhum atendimento anterior' }}\n\nMensagem ATUAL do cliente, a ser avaliada:\n{{ $('Normalizar Payload UAZAPI').item.json.text }}",
+        "options": {
+          "systemMessage": "Você é um guardrail de segurança de um atendimento automatizado de uma agência de viagens via WhatsApp.\n\nSua única tarefa é decidir se a mensagem ATUAL do cliente deve ser IMEDIATAMENTE transferida para um atendente humano, sem qualquer resposta automática da IA de vendas.\n\nMarque precisa_transbordo = true quando a mensagem contiver qualquer um destes sinais:\n- Reclamação sobre um problema operacional já em andamento: voo atrasado ou cancelado, overbooking, bagagem extraviada ou danificada, problema com uma reserva já paga, pedido de reembolso, remarcação urgente.\n- Tom de irritação, raiva, frustração, xingamentos ou ameaças (ex.: processar, Procon).\n- Pedido explícito para falar com atendente humano, gerente ou supervisor.\n- Qualquer situação sensível ou de crise fora do escopo de uma conversa comercial normal de pré-venda.\n\nMarque precisa_transbordo = false para mensagens normais de pré-venda: interesse em pacotes, dúvidas sobre destinos, preços, datas, negociação, etc.\n\nNa dúvida, prefira transbordar - um falso positivo (transferir à toa) é muito menos grave do que deixar a IA tentar responder a um cliente com um problema real ou irritado.\n\nO resumo do atendimento anterior é só contexto adicional (ex.: se já existe uma reserva em andamento, uma reclamação faz ainda mais sentido) - a decisão deve ser sobre a mensagem ATUAL.\n\nPreencha categoria com um destes valores: 'reclamacao_operacional', 'cliente_irritado', 'pedido_atendente_humano', ou 'normal' (só quando precisa_transbordo=false)."
+        }
+      },
+      "id": "agent-guardrail",
+      "name": "Triagem de Guardrail",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -520,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"precisa_transbordo\": { \"type\": \"boolean\", \"description\": \"true se a mensagem deve ir direto para um atendente humano\" },\n    \"categoria\": { \"type\": \"string\", \"enum\": [\"reclamacao_operacional\", \"cliente_irritado\", \"pedido_atendente_humano\", \"normal\"] },\n    \"motivo\": { \"type\": \"string\", \"description\": \"Explicação curta do motivo da decisão\" }\n  },\n  \"required\": [\"precisa_transbordo\", \"categoria\", \"motivo\"]\n}"
+      },
+      "id": "output-parser-guardrail",
+      "name": "Formato de Saída (Guardrail)",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        -520,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-precisa-transbordo",
+              "leftValue": "={{ $json.output.precisa_transbordo }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-precisa-transbordo",
+      "name": "Precisa Transbordo Imediato?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO atendimentos (id, lead_id, status, topico, motivo_transbordo, last_message_at)\nVALUES (COALESCE($2, gen_random_uuid()), $1, 'transbordado', 'Transbordo para atendimento humano', $3, now())\nON CONFLICT (id) DO UPDATE\n  SET status = 'transbordado',\n      motivo_transbordo = EXCLUDED.motivo_transbordo,\n      last_message_at = now()\nRETURNING id AS atendimento_id;",
+        "options": {
+          "queryReplacement": "={{ [$('Upsert Lead').item.json.id, $('Preparar Contexto e Calcular Gap').item.json.atendimentoAnteriorId, $json.output.motivo] }}"
+        }
+      },
+      "id": "pg-upsert-atendimento-transbordo",
+      "name": "Marcar Atendimento como Transbordado",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -40,
+        60
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE leads SET agent_active = false, updated_at = now() WHERE id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Upsert Lead').item.json.id] }}"
+        }
+      },
+      "id": "pg-desativar-agente-guardrail",
+      "name": "Desativar Agente (Guardrail)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        200,
+        60
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO mensagens (atendimento_id, lead_id, remetente, conteudo)\nVALUES ($1, $2, 'lead', $3)\nRETURNING atendimento_id;",
+        "options": {
+          "queryReplacement": "={{ [$('Marcar Atendimento como Transbordado').item.json.atendimento_id, $('Upsert Lead').item.json.id, $('Normalizar Payload UAZAPI').item.json.text] }}"
+        }
+      },
+      "id": "pg-registrar-mensagem-lead-transbordo",
+      "name": "Registrar Mensagem do Lead (Transbordo)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        440,
+        60
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://SUA_INSTANCIA.uazapi.com/send/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "SEU_TOKEN_UAZAPI"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"number\": $('Normalizar Payload UAZAPI').item.json.phone, \"text\": \"Recebi sua mensagem e entendo a situação. Vou te transferir agora para um de nossos atendentes, que vai te ajudar o quanto antes. 🙏\" } }}",
+        "options": {}
+      },
+      "id": "http-enviar-aviso-transbordo",
+      "name": "Enviar Aviso de Transbordo ao Lead (UAZAPI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// AJUSTAR: extrai o ID retornado pela UAZAPI para o aviso de transbordo,\n// para reconhecer o eco dele no webhook e não gerar ruído no handoff.\nconst resposta = $json;\nconst externalId = resposta.id || resposta?.key?.id || resposta?.messageId || null;\n\nreturn [{\n  json: {\n    atendimentoId: $('Marcar Atendimento como Transbordado').item.json.atendimento_id,\n    externalId,\n  },\n}];"
+      },
+      "id": "code-extrair-id-aviso-transbordo",
+      "name": "Extrair ID do Aviso Enviado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO mensagens (atendimento_id, lead_id, remetente, conteudo, external_id)\nVALUES ($1, $2, 'agente', $3, $4);",
+        "options": {
+          "queryReplacement": "={{ [$json.atendimentoId, $('Upsert Lead').item.json.id, 'Recebi sua mensagem e entendo a situação. Vou te transferir agora para um de nossos atendentes, que vai te ajudar o quanto antes. 🙏', $json.externalId] }}"
+        }
+      },
+      "id": "pg-registrar-aviso-transbordo",
+      "name": "Registrar Aviso de Transbordo",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1160,
+        60
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://SUA_INSTANCIA.uazapi.com/send/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "SEU_TOKEN_UAZAPI"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"number\": \"SEU_GROUP_ID@g.us\", \"text\": '🚨 TRANSBORDO NECESSÁRIO — ' + ($('Normalizar Payload UAZAPI').item.json.pushName || $('Normalizar Payload UAZAPI').item.json.phone) + '\\nMotivo (' + $('Triagem de Guardrail').item.json.output.categoria + '): ' + $('Triagem de Guardrail').item.json.output.motivo + '\\nMensagem do cliente: \"' + $('Normalizar Payload UAZAPI').item.json.text + '\"' } }}",
+        "options": {}
+      },
+      "id": "http-notificar-grupo-transbordo",
+      "name": "Notificar Grupo - Transbordo Urgente (UAZAPI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        60
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "noop-fim-transbordado",
+      "name": "Fim - Transbordado para Humano",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1640,
+        60
       ]
     },
     {
@@ -245,8 +515,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        -1000,
-        -180
+        -40,
+        -360
       ],
       "credentials": {
         "postgres": {
@@ -284,8 +554,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        -760,
-        -180
+        200,
+        -360
       ]
     },
     {
@@ -295,8 +565,8 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        -520,
-        0
+        440,
+        -220
       ]
     },
     {
@@ -310,8 +580,8 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        -520,
-        -360
+        440,
+        -520
       ],
       "webhookId": "wait-lead-message"
     },
@@ -328,8 +598,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        -280,
-        -360
+        680,
+        -520
       ],
       "credentials": {
         "postgres": {
@@ -367,8 +637,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        -40,
-        -360
+        920,
+        -520
       ]
     },
     {
@@ -378,8 +648,8 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        200,
-        -160
+        1160,
+        -340
       ]
     },
     {
@@ -391,52 +661,16 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        200,
-        -540
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT id, topico, resumo, classificacao, last_message_at\nFROM atendimentos\nWHERE lead_id = $1\nORDER BY last_message_at DESC\nLIMIT 1;",
-        "options": {
-          "queryReplacement": "={{ [$('Upsert Lead').item.json.id] }}"
-        }
-      },
-      "id": "pg-buscar-atendimento",
-      "name": "Buscar Último Atendimento",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [
-        440,
-        -540
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
-          "name": "Supabase (Postgres)"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "// Decide se, à primeira vista, é plausível ser um assunto novo.\n// Regra: se o lead falou há pouco tempo (ex.: dentro de 6h), é claramente\n// a mesma conversa - não vale a pena nem perguntar à IA. Só quando o\n// intervalo é grande (ex.: aqueles \"7 dias depois\" do exemplo) é que\n// pedimos para a IA avaliar se é continuação ou assunto novo.\nconst LIMITE_HORAS_MESMO_ASSUNTO = 6;\n\nconst rows = $input.all();\nconst atendimentoAnterior = rows.length > 0 ? rows[0].json : null;\n\nlet gapHoras = null;\nlet possivelNovoAssunto = true;\n\nif (atendimentoAnterior) {\n  const last = new Date(atendimentoAnterior.last_message_at);\n  gapHoras = (Date.now() - last.getTime()) / (1000 * 60 * 60);\n  possivelNovoAssunto = gapHoras > LIMITE_HORAS_MESMO_ASSUNTO;\n}\n\nreturn [{\n  json: {\n    mensagemConsolidada: $('Montar Texto Consolidado').item.json.mensagemConsolidada,\n    temAtendimentoAnterior: !!atendimentoAnterior,\n    atendimentoAnteriorId: atendimentoAnterior ? atendimentoAnterior.id : null,\n    topicoAnterior: atendimentoAnterior ? atendimentoAnterior.topico : null,\n    resumoAnterior: atendimentoAnterior ? atendimentoAnterior.resumo : null,\n    classificacaoAnterior: atendimentoAnterior ? atendimentoAnterior.classificacao : null,\n    gapHoras,\n    possivelNovoAssunto,\n  }\n}];"
-      },
-      "id": "code-preparar-contexto",
-      "name": "Preparar Contexto e Calcular Gap",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        680,
-        -540
+        1160,
+        -680
       ]
     },
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Mensagens novas do lead nesta janela de atendimento (podem ter sido enviadas em pedaços, trate como um único contexto):\n\n{{ $json.mensagemConsolidada }}\n\n---\n{{ $json.temAtendimentoAnterior ? ('Você já atendeu este lead antes.\\nResumo do atendimento anterior: ' + $json.resumoAnterior + '\\nClassificação anterior: ' + $json.classificacaoAnterior + '\\nTempo desde a última mensagem: ' + Math.round($json.gapHoras) + ' horas.') : 'Este é o primeiro contato deste lead - não existe histórico anterior.' }}\n{{ $json.possivelNovoAssunto ? 'Como faz tempo desde o último contato, avalie com atenção se a mensagem nova continua o MESMO assunto do resumo acima ou se é um ASSUNTO NOVO, e preencha o campo mesmo_assunto de acordo.' : '' }}",
+        "text": "=Mensagens novas do lead nesta janela de atendimento (podem ter sido enviadas em pedaços, trate como um único contexto):\n\n{{ $json.mensagemConsolidada }}\n\n---\n{{ $('Preparar Contexto e Calcular Gap').item.json.temAtendimentoAnterior ? ('Você já atendeu este lead antes.\\nResumo do atendimento anterior: ' + $('Preparar Contexto e Calcular Gap').item.json.resumoAnterior + '\\nClassificação anterior: ' + $('Preparar Contexto e Calcular Gap').item.json.classificacaoAnterior + '\\nTempo desde a última mensagem: ' + Math.round($('Preparar Contexto e Calcular Gap').item.json.gapHoras) + ' horas.') : 'Este é o primeiro contato deste lead - não existe histórico anterior.' }}\n{{ $('Preparar Contexto e Calcular Gap').item.json.possivelNovoAssunto ? 'Como faz tempo desde o último contato, avalie com atenção se a mensagem nova continua o MESMO assunto do resumo acima ou se é um ASSUNTO NOVO, e preencha o campo mesmo_assunto de acordo.' : '' }}",
         "options": {
-          "systemMessage": "Você é o assistente virtual de atendimento de uma agência de viagens (WhatsApp).\n\nObjetivo:\n1. Se houver histórico anterior e for o MESMO assunto, cumprimente o lead reconhecendo a conversa anterior (como um atendente humano que lembra do cliente), sem repetir perguntas já respondidas antes.\n2. Se não houver histórico, ou se for um ASSUNTO NOVO, conduza como um primeiro atendimento: boas-vindas + perguntas de qualificação.\n3. Conduza a conversa para entender: destino desejado, período/data pretendida, número de pessoas, orçamento aproximado e urgência.\n4. Nunca invente informações que o lead não forneceu.\n5. Classifique o lead em uma das categorias:\n   - quente: data definida/próxima, orçamento mencionado, urgência clara, ou pede para fechar/agendar.\n   - morno: interesse real com alguma informação relevante, mas sem urgência ou dados completos.\n   - frio: mensagem vaga, curiosidade, sem intenção clara, ou ignora as perguntas de qualificação.\n6. Gere um resumo atualizado do atendimento (curto, objetivo, útil para você mesmo se lembrar depois) e um tópico curto (ex.: \"Pacote Cancún - casal - julho\").\n7. Preencha mesmo_assunto = true apenas quando a nova mensagem for claramente uma continuação do resumo anterior fornecido; caso contrário false. Se não havia atendimento anterior, preencha mesmo_assunto = false.\n8. NÃO escreva a resposta como um texto único e grande. Quebre em `mensagens_resposta`: uma lista de 1 a 4 mensagens curtas e naturais, como uma pessoa realmente digitaria no WhatsApp em várias mensagens seguidas (ex.: uma saudação separada da pergunta de qualificação). Cada item da lista é uma mensagem/bolha separada.\n\nResponda sempre em português do Brasil, em tom cordial e profissional."
+          "systemMessage": "Você é o assistente virtual de atendimento de uma agência de viagens (WhatsApp).\n\nEsta mensagem já passou pelo guardrail de segurança e foi considerada uma conversa comercial normal (não é reclamação, urgência operacional nem cliente irritado) - responda normalmente como vendedor consultivo.\n\nObjetivo:\n1. Se houver histórico anterior e for o MESMO assunto, cumprimente o lead reconhecendo a conversa anterior (como um atendente humano que lembra do cliente), sem repetir perguntas já respondidas antes.\n2. Se não houver histórico, ou se for um ASSUNTO NOVO, conduza como um primeiro atendimento: boas-vindas + perguntas de qualificação.\n3. Conduza a conversa para entender: destino desejado, período/data pretendida, número de pessoas, orçamento aproximado e urgência.\n4. Nunca invente informações que o lead não forneceu.\n5. Classifique o lead em uma das categorias:\n   - quente: data definida/próxima, orçamento mencionado, urgência clara, ou pede para fechar/agendar.\n   - morno: interesse real com alguma informação relevante, mas sem urgência ou dados completos.\n   - frio: mensagem vaga, curiosidade, sem intenção clara, ou ignora as perguntas de qualificação.\n6. Gere um resumo atualizado do atendimento (curto, objetivo, útil para você mesmo se lembrar depois) e um tópico curto (ex.: \"Pacote Cancún - casal - julho\").\n7. Preencha mesmo_assunto = true apenas quando a nova mensagem for claramente uma continuação do resumo anterior fornecido; caso contrário false. Se não havia atendimento anterior, preencha mesmo_assunto = false.\n8. NÃO escreva a resposta como um texto único e grande. Quebre em `mensagens_resposta`: uma lista de 1 a 4 mensagens curtas e naturais, como uma pessoa realmente digitaria no WhatsApp em várias mensagens seguidas (ex.: uma saudação separada da pergunta de qualificação). Cada item da lista é uma mensagem/bolha separada.\n\nResponda sempre em português do Brasil, em tom cordial e profissional."
         }
       },
       "id": "agent-qualificar-lead",
@@ -444,8 +678,8 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
       "position": [
-        920,
-        -700
+        1400,
+        -680
       ]
     },
     {
@@ -464,8 +698,8 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1,
       "position": [
-        820,
-        -460
+        -700,
+        200
       ],
       "credentials": {
         "openAiApi": {
@@ -484,21 +718,21 @@
       "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
       "typeVersion": 1.2,
       "position": [
-        1040,
-        -460
+        1400,
+        -520
       ]
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $('Preparar Contexto e Calcular Gap').item.json;\nconst saida = $json.output;\n\nlet reutilizarAtendimento = false;\nif (ctx.temAtendimentoAnterior) {\n  reutilizarAtendimento = ctx.possivelNovoAssunto ? saida.mesmo_assunto === true : true;\n}\n\nreturn [{\n  json: {\n    ...ctx,\n    ...saida,\n    reutilizarAtendimento,\n  }\n}];"
+        "jsCode": "const ctx = $('Preparar Contexto e Calcular Gap').item.json;\nconst mensagemConsolidada = $('Montar Texto Consolidado').item.json.mensagemConsolidada;\nconst saida = $json.output;\n\nlet reutilizarAtendimento = false;\nif (ctx.temAtendimentoAnterior) {\n  reutilizarAtendimento = ctx.possivelNovoAssunto ? saida.mesmo_assunto === true : true;\n}\n\nreturn [{\n  json: {\n    ...ctx,\n    mensagemConsolidada,\n    ...saida,\n    reutilizarAtendimento,\n  }\n}];"
       },
       "id": "code-decidir-atendimento",
       "name": "Decidir Atendimento (novo ou continuar)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1180,
-        -700
+        1640,
+        -680
       ]
     },
     {
@@ -530,8 +764,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        1420,
-        -700
+        1880,
+        -680
       ]
     },
     {
@@ -547,8 +781,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1660,
-        -820
+        2120,
+        -800
       ],
       "credentials": {
         "postgres": {
@@ -570,7 +804,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1660,
+        2120,
         -600
       ],
       "credentials": {
@@ -593,8 +827,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1900,
-        -700
+        2360,
+        -680
       ],
       "credentials": {
         "postgres": {
@@ -612,8 +846,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2140,
-        -700
+        2600,
+        -680
       ]
     },
     {
@@ -626,8 +860,8 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        2380,
-        -700
+        2840,
+        -680
       ]
     },
     {
@@ -653,8 +887,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2660,
-        -560
+        3120,
+        -540
       ]
     },
     {
@@ -668,8 +902,8 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        2900,
-        -560
+        3360,
+        -540
       ]
     },
     {
@@ -695,8 +929,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3140,
-        -560
+        3600,
+        -540
       ]
     },
     {
@@ -708,8 +942,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3380,
-        -560
+        3840,
+        -540
       ]
     },
     {
@@ -725,8 +959,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        3620,
-        -560
+        4080,
+        -540
       ],
       "credentials": {
         "postgres": {
@@ -758,8 +992,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2660,
-        -820
+        3120,
+        -800
       ]
     }
   ],
@@ -859,7 +1093,7 @@
       "main": [
         [
           {
-            "node": "Enfileirar Mensagem (Lock Atômico)",
+            "node": "Buscar Último Atendimento",
             "type": "main",
             "index": 0
           }
@@ -867,6 +1101,161 @@
         [
           {
             "node": "Fim - Atendente Humano Está Cuidando",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Último Atendimento": {
+      "main": [
+        [
+          {
+            "node": "Preparar Contexto e Calcular Gap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Contexto e Calcular Gap": {
+      "main": [
+        [
+          {
+            "node": "Triagem de Guardrail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Triagem de Guardrail": {
+      "main": [
+        [
+          {
+            "node": "Precisa Transbordo Imediato?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Triagem de Guardrail",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Qualificar Lead e Responder",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formato de Saída (Guardrail)": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Triagem de Guardrail",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Precisa Transbordo Imediato?": {
+      "main": [
+        [
+          {
+            "node": "Marcar Atendimento como Transbordado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enfileirar Mensagem (Lock Atômico)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar Atendimento como Transbordado": {
+      "main": [
+        [
+          {
+            "node": "Desativar Agente (Guardrail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Desativar Agente (Guardrail)": {
+      "main": [
+        [
+          {
+            "node": "Registrar Mensagem do Lead (Transbordo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar Mensagem do Lead (Transbordo)": {
+      "main": [
+        [
+          {
+            "node": "Enviar Aviso de Transbordo ao Lead (UAZAPI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Aviso de Transbordo ao Lead (UAZAPI)": {
+      "main": [
+        [
+          {
+            "node": "Extrair ID do Aviso Enviado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair ID do Aviso Enviado": {
+      "main": [
+        [
+          {
+            "node": "Registrar Aviso de Transbordo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar Aviso de Transbordo": {
+      "main": [
+        [
+          {
+            "node": "Notificar Grupo - Transbordo Urgente (UAZAPI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notificar Grupo - Transbordo Urgente (UAZAPI)": {
+      "main": [
+        [
+          {
+            "node": "Fim - Transbordado para Humano",
             "type": "main",
             "index": 0
           }
@@ -946,28 +1335,6 @@
       "main": [
         [
           {
-            "node": "Buscar Último Atendimento",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Buscar Último Atendimento": {
-      "main": [
-        [
-          {
-            "node": "Preparar Contexto e Calcular Gap",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Preparar Contexto e Calcular Gap": {
-      "main": [
-        [
-          {
             "node": "Qualificar Lead e Responder",
             "type": "main",
             "index": 0
@@ -981,17 +1348,6 @@
           {
             "node": "Decidir Atendimento (novo ou continuar)",
             "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "OpenAI Chat Model": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Qualificar Lead e Responder",
-            "type": "ai_languageModel",
             "index": 0
           }
         ]

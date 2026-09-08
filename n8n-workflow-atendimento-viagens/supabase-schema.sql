@@ -22,10 +22,11 @@ create table leads (
 create table atendimentos (
   id uuid primary key default gen_random_uuid(),
   lead_id uuid not null references leads(id) on delete cascade,
-  status text not null default 'aberto' check (status in ('aberto','encerrado')),
+  status text not null default 'aberto' check (status in ('aberto','encerrado','transbordado')),
   topico text,               -- rótulo curto do assunto (ex.: "Pacote Cancún - casal - julho")
   resumo text,                -- resumo cumulativo usado como memória entre janelas/dias
   classificacao text check (classificacao in ('frio','morno','quente')),
+  motivo_transbordo text,     -- preenchido quando o guardrail transfere para atendimento humano
   started_at timestamptz not null default now(),
   last_message_at timestamptz not null default now()
 );
